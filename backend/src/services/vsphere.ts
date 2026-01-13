@@ -54,12 +54,10 @@ class VSphereService {
   async getFolderByName(folderName: string): Promise<string | null> {
     try {
       if (!this.sessionId) await this.authenticate();
-      const res = await this.client.get('/api/vcenter/folder', {
-        headers: this.headers,
-        params: { 'filter.names': folderName }
-      });
-      const vmFolder = res.data?.find((f: any) => f.type === 'VIRTUAL_MACHINE');
-      return vmFolder?.folder || res.data?.[0]?.folder || null;
+      // 获取所有 folder，在本地过滤（兼容不支持 filter 参数的 vCenter 版本）
+      const res = await this.client.get('/api/vcenter/folder', { headers: this.headers });
+      const folder = res.data?.find((f: any) => f.name === folderName && f.type === 'VIRTUAL_MACHINE');
+      return folder?.folder || null;
     } catch (err) {
       console.error('getFolderByName error:', err);
       return null;
