@@ -1,16 +1,16 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { auth as authApi } from './api';
 
 interface User {
   id: number;
   username: string;
-  role: 'admin' | 'tenant';
-  tenantId?: number;
+  email: string;
+  role: 'admin' | 'user';
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
 }
@@ -30,8 +30,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const login = async (username: string, password: string) => {
-    const res = await authApi.login(username, password);
+  const login = async (email: string, password: string) => {
+    const res = await authApi.login(email, password);
     localStorage.setItem('token', res.data.token);
     setUser(res.data.user);
   };

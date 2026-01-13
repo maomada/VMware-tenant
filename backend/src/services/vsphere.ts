@@ -50,6 +50,24 @@ class VSphereService {
     const res = await this.client.get(`/api/vcenter/vm/${vmId}/power`, { headers: this.headers });
     return res.data;
   }
+
+  async getFolderByName(folderName: string): Promise<string | null> {
+    if (!this.sessionId) await this.authenticate();
+    const res = await this.client.get('/api/vcenter/folder', {
+      headers: this.headers,
+      params: { 'filter.names': folderName, 'filter.type': 'VIRTUAL_MACHINE' }
+    });
+    return res.data?.[0]?.folder || null;
+  }
+
+  async getVMsByFolder(folderId: string) {
+    if (!this.sessionId) await this.authenticate();
+    const res = await this.client.get('/api/vcenter/vm', {
+      headers: this.headers,
+      params: { 'filter.folders': folderId }
+    });
+    return res.data;
+  }
 }
 
 export const vsphere = new VSphereService();

@@ -1,27 +1,34 @@
--- 租户表
-CREATE TABLE tenants (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    contact_email VARCHAR(100),
-    status VARCHAR(20) DEFAULT 'active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 -- 用户表
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'tenant')),
-    tenant_id INTEGER REFERENCES tenants(id),
+    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'user')),
+    email_verified BOOLEAN DEFAULT FALSE,
+    verification_token VARCHAR(100),
+    verification_expires TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 项目表 (对应 vCenter Folder)
+CREATE TABLE projects (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    vcenter_folder_path VARCHAR(500) NOT NULL,
+    vcenter_folder_id VARCHAR(100),
+    status VARCHAR(20) DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, vcenter_folder_path)
 );
 
 -- 虚拟机表
 CREATE TABLE virtual_machines (
     id SERIAL PRIMARY KEY,
-    tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
-    vcenter_vm_id VARCHAR(100) NOT NULL,
+    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+    vcenter_vm_id VARCHAR(100) NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
     cpu_cores INTEGER NOT NULL,
     memory_gb INTEGER NOT NULL,
@@ -43,7 +50,7 @@ CREATE TABLE pricing_config (
 CREATE TABLE usage_records (
     id SERIAL PRIMARY KEY,
     vm_id INTEGER REFERENCES virtual_machines(id),
-    tenant_id INTEGER REFERENCES tenants(id),
+    project_id INTEGER REFERENCES projects(id),
     record_date DATE NOT NULL,
     cpu_hours DECIMAL(10,2) DEFAULT 0,
     memory_gb_hours DECIMAL(10,2) DEFAULT 0,
@@ -55,7 +62,7 @@ CREATE TABLE usage_records (
 -- 账单表
 CREATE TABLE bills (
     id SERIAL PRIMARY KEY,
-    tenant_id INTEGER REFERENCES tenants(id),
+    user_id INTEGER REFERENCES users(id),
     billing_period VARCHAR(7) NOT NULL,
     cpu_cost DECIMAL(12,2) DEFAULT 0,
     memory_cost DECIMAL(12,2) DEFAULT 0,
@@ -64,7 +71,7 @@ CREATE TABLE bills (
     total_cost DECIMAL(12,2) DEFAULT 0,
     status VARCHAR(20) DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(tenant_id, billing_period)
+    UNIQUE(user_id, billing_period)
 );
 
 -- 初始化默认价格
@@ -74,6 +81,6 @@ INSERT INTO pricing_config (resource_type, unit_price) VALUES
 ('storage', 0.001),
 ('gpu', 0.50);
 
--- 创建默认管理员 (密码: admin123)
-INSERT INTO users (username, password_hash, role) VALUES
-('admin', '$2b$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'admin');
+-- 创建默认管理员 (密码: admin123, 邮箱: admin@leinao.ai)
+INSERT INTO users (username, email, password_hash, role, email_verified, status) VALUES
+('admin', 'admin@leinao.ai', '$2b$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'admin', TRUE, 'active');

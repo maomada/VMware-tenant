@@ -20,35 +20,44 @@ api.interceptors.response.use(
 );
 
 export const auth = {
-  login: (username: string, password: string) => api.post('/auth/login', { username, password }),
+  register: (email: string, password: string) => api.post('/auth/register', { email, password }),
+  verify: (token: string) => api.get(`/auth/verify/${token}`),
+  login: (email: string, password: string) => api.post('/auth/login', { email, password }),
   me: () => api.get('/auth/me')
 };
 
-export const tenants = {
-  list: () => api.get('/tenants'),
-  get: (id: number) => api.get(`/tenants/${id}`),
-  create: (data: any) => api.post('/tenants', data),
-  update: (id: number, data: any) => api.put(`/tenants/${id}`, data),
-  delete: (id: number) => api.delete(`/tenants/${id}`),
-  createUser: (id: number, data: any) => api.post(`/tenants/${id}/users`, data)
+export const projects = {
+  list: () => api.get('/projects'),
+  get: (id: number) => api.get(`/projects/${id}`),
+  create: (data: any) => api.post('/projects', data),
+  delete: (id: number) => api.delete(`/projects/${id}`),
+  sync: (id: number) => api.post(`/projects/${id}/sync`)
 };
 
 export const vms = {
-  list: () => api.get('/vms'),
+  list: (projectId?: number) => api.get('/vms', { params: projectId ? { projectId } : {} }),
   get: (id: number) => api.get(`/vms/${id}`),
-  create: (data: any) => api.post('/vms', data),
   powerOn: (id: number) => api.post(`/vms/${id}/power-on`),
-  powerOff: (id: number) => api.post(`/vms/${id}/power-off`),
-  syncVCenter: () => api.get('/vms/sync/vcenter')
+  powerOff: (id: number) => api.post(`/vms/${id}/power-off`)
 };
 
 export const billing = {
   bills: () => api.get('/billing/bills'),
   bill: (id: number) => api.get(`/billing/bills/${id}`),
-  exportBill: (id: number) => `/api/billing/bills/${id}/export`,
-  generate: (tenantId: number, period: string) => api.post('/billing/generate', { tenantId, period }),
-  pricing: () => api.get('/billing/pricing'),
-  updatePricing: (prices: any[]) => api.put('/billing/pricing', { prices })
+  exportBill: (id: number) => `/api/billing/bills/${id}/export`
+};
+
+export const admin = {
+  users: () => api.get('/admin/users'),
+  updatePassword: (id: number, password: string) => api.put(`/admin/users/${id}/password`, { password }),
+  updateUserStatus: (id: number, status: string) => api.put(`/admin/users/${id}/status`, { status }),
+  deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
+  projects: () => api.get('/admin/projects'),
+  updateProjectUser: (id: number, userId: number) => api.put(`/admin/projects/${id}/user`, { userId }),
+  vms: () => api.get('/admin/vms'),
+  updateVmProject: (id: number, projectId: number) => api.put(`/admin/vms/${id}/project`, { projectId }),
+  pricing: () => api.get('/admin/pricing'),
+  updatePricing: (prices: any[]) => api.put('/admin/pricing', { prices })
 };
 
 export default api;
