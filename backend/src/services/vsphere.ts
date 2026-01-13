@@ -52,12 +52,18 @@ class VSphereService {
   }
 
   async getFolderByName(folderName: string): Promise<string | null> {
-    if (!this.sessionId) await this.authenticate();
-    const res = await this.client.get('/api/vcenter/folder', {
-      headers: this.headers,
-      params: { 'filter.names': folderName, 'filter.type': 'VIRTUAL_MACHINE' }
-    });
-    return res.data?.[0]?.folder || null;
+    try {
+      if (!this.sessionId) await this.authenticate();
+      const res = await this.client.get('/api/vcenter/folder', {
+        headers: this.headers,
+        params: { 'filter.names': folderName }
+      });
+      const vmFolder = res.data?.find((f: any) => f.type === 'VIRTUAL_MACHINE');
+      return vmFolder?.folder || res.data?.[0]?.folder || null;
+    } catch (err) {
+      console.error('getFolderByName error:', err);
+      return null;
+    }
   }
 
   async getVMsByFolder(folderId: string) {

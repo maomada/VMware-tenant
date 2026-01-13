@@ -53,5 +53,13 @@ cron.schedule('0 * * * *', async () => {
   }
 });
 
+// 防止未捕获异常导致进程崩溃
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
