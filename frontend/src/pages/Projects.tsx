@@ -12,25 +12,38 @@ export default function Projects() {
 
   const load = async () => {
     setLoading(true);
-    const res = await projects.list();
-    setData(res.data);
-    setLoading(false);
+    try {
+      const res = await projects.list();
+      setData(res.data);
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '加载失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
 
   const onCreate = async (values: any) => {
-    await projects.create(values);
-    message.success('创建成功');
-    setModal(false);
-    form.resetFields();
-    load();
+    try {
+      await projects.create(values);
+      message.success('创建成功');
+      setModal(false);
+      form.resetFields();
+      load();
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '创建失败');
+    }
   };
 
   const onDelete = async (id: number) => {
-    await projects.delete(id);
-    message.success('删除成功');
-    load();
+    try {
+      await projects.delete(id);
+      message.success('删除成功');
+      load();
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '删除失败');
+    }
   };
 
   const onSync = async (id: number) => {

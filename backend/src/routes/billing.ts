@@ -37,4 +37,17 @@ router.get('/bills/:id/export', auth, async (req: AuthRequest, res) => {
   res.send('\uFEFF' + generateCSV(bill));
 });
 
+// 生成账单 (admin only)
+router.post('/generate', auth, async (req: AuthRequest, res) => {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const { userId, period } = req.body;
+  if (!userId || !period) {
+    return res.status(400).json({ error: '缺少 userId 或 period 参数' });
+  }
+  await calculateBill(userId, period);
+  res.json({ message: '账单生成成功' });
+});
+
 export default router;

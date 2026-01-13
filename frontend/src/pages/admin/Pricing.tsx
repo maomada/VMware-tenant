@@ -9,9 +9,14 @@ export default function AdminPricing() {
 
   const load = async () => {
     setLoading(true);
-    const res = await admin.pricing();
-    setData(res.data);
-    setLoading(false);
+    try {
+      const res = await admin.pricing();
+      setData(res.data);
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '加载失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -22,9 +27,14 @@ export default function AdminPricing() {
 
   const save = async () => {
     setSaving(true);
-    await admin.updatePricing(data.map(d => ({ resourceType: d.resource_type, unitPrice: d.unit_price })));
-    message.success('保存成功');
-    setSaving(false);
+    try {
+      await admin.updatePricing(data.map(d => ({ resourceType: d.resource_type, unitPrice: d.unit_price })));
+      message.success('保存成功');
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '保存失败');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const resourceNames: Record<string, string> = {

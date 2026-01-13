@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Tag, Card, Row, Col, Statistic } from 'antd';
+import { Table, Button, Tag, Card, Row, Col, Statistic, message } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import { billing } from '../api';
 
@@ -9,7 +9,10 @@ export default function Billing() {
 
   useEffect(() => {
     setLoading(true);
-    billing.bills().then(res => setBills(res.data)).finally(() => setLoading(false));
+    billing.bills()
+      .then(res => setBills(res.data))
+      .catch((e: any) => message.error(e.response?.data?.error || '加载失败'))
+      .finally(() => setLoading(false));
   }, []);
 
   const totalCost = bills.reduce((sum, b) => sum + parseFloat(b.total_cost), 0);

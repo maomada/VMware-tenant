@@ -11,24 +11,37 @@ export default function VMs() {
 
   const load = async () => {
     setLoading(true);
-    const [vmRes, projRes] = await Promise.all([vms.list(selectedProject), projects.list()]);
-    setData(vmRes.data);
-    setProjectList(projRes.data);
-    setLoading(false);
+    try {
+      const [vmRes, projRes] = await Promise.all([vms.list(selectedProject), projects.list()]);
+      setData(vmRes.data);
+      setProjectList(projRes.data);
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '加载失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, [selectedProject]);
 
   const powerOn = async (id: number) => {
-    await vms.powerOn(id);
-    message.success('开机指令已发送');
-    load();
+    try {
+      await vms.powerOn(id);
+      message.success('开机指令已发送');
+      load();
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '操作失败');
+    }
   };
 
   const powerOff = async (id: number) => {
-    await vms.powerOff(id);
-    message.success('关机指令已发送');
-    load();
+    try {
+      await vms.powerOff(id);
+      message.success('关机指令已发送');
+      load();
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '操作失败');
+    }
   };
 
   const columns = [

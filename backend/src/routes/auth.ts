@@ -83,4 +83,28 @@ router.get('/me', auth, (req: AuthRequest, res) => {
   res.json(req.user);
 });
 
+// 重发验证邮件
+router.post('/resend-verification', async (req, res) => {
+  const { email } = req.body;
+  const result = await pool.query(
+    'SELECT id, email_verified FROM users WHERE email = $1',
+    [email]
+  );
+  const user = result.rows[0];
+  if (!user) {
+    return res.status(400).json({ error: '用户不存在' });
+  }
+  if (user.email_verified) {
+    return res.status(400).json({ error: '邮箱已验证' });
+  }
+  const token = crypto.randomBytes(32).toString('hex');
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await pool.query(
+    'UPDATE users SET verification_token = $1, verification_expires = $2 WHERE id = $3',
+    [token, expires, user.id]
+  );
+  await sendVerificationEmail(email, token);
+  res.json({ message: '验证邮件已重新发送' });
+});
+
 export default router;

@@ -10,32 +10,49 @@ export default function AdminUsers() {
 
   const load = async () => {
     setLoading(true);
-    const res = await admin.users();
-    setData(res.data);
-    setLoading(false);
+    try {
+      const res = await admin.users();
+      setData(res.data);
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '加载失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
 
   const toggleStatus = async (id: number, currentStatus: string) => {
-    const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
-    await admin.updateUserStatus(id, newStatus);
-    message.success('状态已更新');
-    load();
+    try {
+      const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
+      await admin.updateUserStatus(id, newStatus);
+      message.success('状态已更新');
+      load();
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '操作失败');
+    }
   };
 
   const deleteUser = async (id: number) => {
-    await admin.deleteUser(id);
-    message.success('删除成功');
-    load();
+    try {
+      await admin.deleteUser(id);
+      message.success('删除成功');
+      load();
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '删除失败');
+    }
   };
 
   const updatePassword = async () => {
     if (!passwordModal || !newPassword) return;
-    await admin.updatePassword(passwordModal.id, newPassword);
-    message.success('密码已更新');
-    setPasswordModal(null);
-    setNewPassword('');
+    try {
+      await admin.updatePassword(passwordModal.id, newPassword);
+      message.success('密码已更新');
+      setPasswordModal(null);
+      setNewPassword('');
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '更新失败');
+    }
   };
 
   const columns = [
