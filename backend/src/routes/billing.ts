@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db';
 import { auth, AuthRequest } from '../middleware/auth';
-import { calculateBill, generateCSV } from '../services/billing';
+import { calculateBill, generateCSV, recordUsage, syncVMConfigs, getUsageDetails } from '../services/billing';
 
 const router = Router();
 
@@ -37,6 +37,13 @@ router.get('/bills/:id/export', auth, async (req: AuthRequest, res) => {
   res.send('\uFEFF' + generateCSV(bill));
 });
 
+// 获取使用明细
+router.get('/usage', auth, async (req: AuthRequest, res) => {
+  const period = req.query.period as string || new Date().toISOString().slice(0, 7);
+  const details = await getUsageDetails(req.user!.id, period);
+  res.json(details);
+});
+
 // 生成账单 (admin only)
 router.post('/generate', auth, async (req: AuthRequest, res) => {
   if (req.user?.role !== 'admin') {
@@ -48,6 +55,16 @@ router.post('/generate', auth, async (req: AuthRequest, res) => {
   }
   await calculateBill(userId, period);
   res.json({ message: '账单生成成功' });
+});
+
+// 手动刷新账单（同步 VM 配置 + 记录使用量）
+router.post('/refresh', auth, async (req: AuthRequest, res) => {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  await syncVMConfigs();
+  await recordUsage();
+  res.json({ message: '账单数据已刷新' });
 });
 
 export default router;

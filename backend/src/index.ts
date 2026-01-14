@@ -2,12 +2,12 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import cron from 'node-cron';
-import { pool } from './db';
 import authRoutes from './routes/auth';
 import projectRoutes from './routes/project';
 import vmRoutes from './routes/vm';
 import billingRoutes from './routes/billing';
 import adminRoutes from './routes/admin';
+import { recordUsage, syncVMConfigs } from './services/billing';
 
 dotenv.config();
 
@@ -34,22 +34,20 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // 每小时记录资源使用
 cron.schedule('0 * * * *', async () => {
   try {
-    const vms = await pool.query("SELECT * FROM virtual_machines WHERE status = 'POWERED_ON'");
-    const today = new Date().toISOString().split('T')[0];
-
-    for (const vm of vms.rows) {
-      await pool.query(`
-        INSERT INTO usage_records (vm_id, project_id, record_date, cpu_hours, memory_gb_hours, storage_gb_hours, gpu_hours)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (vm_id, record_date) DO UPDATE SET
-          cpu_hours = usage_records.cpu_hours + $4,
-          memory_gb_hours = usage_records.memory_gb_hours + $5,
-          storage_gb_hours = usage_records.storage_gb_hours + $6,
-          gpu_hours = usage_records.gpu_hours + $7
-      `, [vm.id, vm.project_id, today, vm.cpu_cores, vm.memory_gb, vm.storage_gb, vm.gpu_count]);
-    }
+    console.log('[Cron] Recording usage...');
+    await recordUsage();
   } catch (err) {
-    console.error('Cron job error:', err);
+    console.error('[Cron] recordUsage error:', err);
+  }
+});
+
+// 每天 23:30 同步 VM 配置
+cron.schedule('30 23 * * *', async () => {
+  try {
+    console.log('[Cron] Syncing VM configs...');
+    await syncVMConfigs();
+  } catch (err) {
+    console.error('[Cron] syncVMConfigs error:', err);
   }
 });
 

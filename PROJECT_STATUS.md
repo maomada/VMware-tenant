@@ -64,11 +64,15 @@ VMware tenant/
 - 支持按 folder 名称同步 VM
 - 兼容不支持 REST API 过滤的 vCenter 版本（使用 SOAP API 回退）
 
-### 4. 计费系统
-- 资源使用记录（CPU/内存/存储/GPU）
+### 4. 计费系统（已完善）
+- 资源使用记录（CPU/内存/存储/GPU 数量/GPU 类型）
 - 每小时自动记录使用量（cron job）
+- 每天 23:30 自动同步 VM 配置
+- 关机 VM 处理：CPU/MEM/GPU 计为 0，存储照常计费
 - 按资源类型定价
 - 月度账单生成
+- 使用明细查询
+- 手动刷新账单数据
 
 ## vSphere 集成说明
 
@@ -116,7 +120,12 @@ VMware tenant/
 | `POST /api/projects/:id/sync` | 同步项目下的 VM |
 | `GET /api/vms` | 获取虚拟机列表 |
 | `POST /api/vms/:id/power` | VM 开关机 |
-| `GET /api/billing` | 获取账单 |
+| `GET /api/billing/bills` | 获取账单列表 |
+| `GET /api/billing/bills/:id` | 获取账单详情 |
+| `GET /api/billing/bills/:id/export` | 导出账单 CSV |
+| `GET /api/billing/usage` | 获取使用明细 |
+| `POST /api/billing/generate` | 生成账单 (admin) |
+| `POST /api/billing/refresh` | 刷新账单数据 (admin) |
 | `GET /api/admin/*` | 管理员功能 |
 
 ## 部署说明

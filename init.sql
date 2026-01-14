@@ -34,6 +34,7 @@ CREATE TABLE virtual_machines (
     memory_gb INTEGER NOT NULL,
     storage_gb INTEGER NOT NULL,
     gpu_count INTEGER DEFAULT 0,
+    gpu_type VARCHAR(100),
     status VARCHAR(20) DEFAULT 'unknown',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -56,6 +57,7 @@ CREATE TABLE usage_records (
     memory_gb_hours DECIMAL(10,2) DEFAULT 0,
     storage_gb_hours DECIMAL(10,2) DEFAULT 0,
     gpu_hours DECIMAL(10,2) DEFAULT 0,
+    gpu_type VARCHAR(100),
     UNIQUE(vm_id, record_date)
 );
 
