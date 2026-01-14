@@ -1,0 +1,180 @@
+# VMware 租户管理系统 - 项目状态文档
+
+## 项目概述
+
+VMware 租户管理系统，用于管理 vCenter 中的虚拟机资源，支持项目管理、VM 同步、资源计费等功能。
+
+## 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| 前端 | React 18, TypeScript, Vite, Ant Design 5, React Router 6 |
+| 后端 | Node.js, Express, TypeScript |
+| 数据库 | PostgreSQL 15 |
+| 部署 | Docker Compose, Nginx |
+| 集成 | VMware vCenter REST API + SOAP API |
+
+## 目录结构
+
+```
+VMware tenant/
+├── backend/
+│   ├── src/
+│   │   ├── index.ts              # 主入口，Express 服务器
+│   │   ├── db.ts                 # 数据库连接
+│   │   ├── middleware/auth.ts    # JWT 认证中间件
+│   │   ├── routes/
+│   │   │   ├── admin.ts          # 管理员路由
+│   │   │   ├── auth.ts           # 认证路由
+│   │   │   ├── billing.ts        # 账单路由
+│   │   │   ├── project.ts        # 项目路由（含 VM 同步）
+│   │   │   └── vm.ts             # 虚拟机路由
+│   │   └── services/
+│   │       ├── billing.ts        # 账单服务
+│   │       ├── email.ts          # 邮件服务
+│   │       └── vsphere.ts        # vSphere API 集成（核心）
+│   ├── Dockerfile
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx               # 主应用组件
+│   │   ├── AuthContext.tsx       # 认证上下文
+│   │   ├── api.ts                # API 客户端
+│   │   └── pages/                # 页面组件
+│   ├── Dockerfile
+│   └── nginx.conf
+├── docker-compose.yml
+├── init.sql                      # 数据库初始化
+└── .env.example                  # 环境变量模板
+```
+
+## 核心功能模块
+
+### 1. 用户管理
+- 用户注册/登录（JWT 认证）
+- 邮箱验证
+- 角色权限（admin/user）
+
+### 2. 项目管理
+- 项目对应 vCenter Folder
+- 支持完整路径：`/Leinao/vm/项目/项目名称`
+
+### 3. 虚拟机同步（已完成）
+- 与 VMware vCenter 集成
+- 支持按 folder 名称同步 VM
+- 兼容不支持 REST API 过滤的 vCenter 版本（使用 SOAP API 回退）
+
+### 4. 计费系统
+- 资源使用记录（CPU/内存/存储/GPU）
+- 每小时自动记录使用量（cron job）
+- 按资源类型定价
+- 月度账单生成
+
+## vSphere 集成说明
+
+### 已解决的问题
+
+1. **vCenter REST API 不支持过滤参数**
+   - 问题：vCenter 7.0.3 的 `/api/vcenter/vm` 不支持 `filter.folders` 参数
+   - 解决：回退到 SOAP API，通过 PropertyCollector 获取 VM 的 folder 路径
+
+2. **VM 路径匹配**
+   - 使用 SOAP API 递归获取每个 VM 的完整 inventory 路径
+   - 按 folder 名称过滤：`vm.folderPath.includes('/${folderName}/')`
+
+### vsphere.ts 关键方法
+
+| 方法 | 说明 |
+|------|------|
+| `authenticate()` | REST API 认证 |
+| `soapLogin()` | SOAP API 认证 |
+| `getFolderByName(name)` | 按名称查找 folder ID |
+| `getVMsByFolder(folderId)` | 获取 folder 下的 VM（自动回退到 SOAP） |
+| `getVMsByFolderName(name)` | 使用 SOAP API 按 folder 名称获取 VM |
+| `getVMInventoryPath(vmId)` | 获取 VM 的完整路径 |
+| `getFolderPath(folderId)` | 递归获取 folder 路径 |
+
+## 数据库表结构
+
+| 表名 | 说明 |
+|------|------|
+| `users` | 用户表 |
+| `projects` | 项目表（关联 vCenter Folder） |
+| `virtual_machines` | 虚拟机表 |
+| `pricing_config` | 资源价格配置 |
+| `usage_records` | 资源使用记录 |
+| `bills` | 账单表 |
+
+## API 路由
+
+| 路由 | 说明 |
+|------|------|
+| `POST /api/auth/register` | 用户注册 |
+| `POST /api/auth/login` | 用户登录 |
+| `GET /api/projects` | 获取项目列表 |
+| `POST /api/projects` | 创建项目 |
+| `POST /api/projects/:id/sync` | 同步项目下的 VM |
+| `GET /api/vms` | 获取虚拟机列表 |
+| `POST /api/vms/:id/power` | VM 开关机 |
+| `GET /api/billing` | 获取账单 |
+| `GET /api/admin/*` | 管理员功能 |
+
+## 部署说明
+
+### 环境变量
+
+```bash
+# 数据库
+DB_USER=postgres
+DB_PASSWORD=postgres123
+
+# JWT
+JWT_SECRET=your-jwt-secret-key
+
+# vCenter
+VCENTER_URL=https://10.0.200.100
+VCENTER_USER=administrator@vsphere.local
+VCENTER_PASSWORD=your-password
+
+# SMTP
+SMTP_HOST=smtp.example.com
+SMTP_PORT=465
+SMTP_USER=your-smtp-user
+SMTP_PASS=your-smtp-password
+
+# 前端 URL
+FRONTEND_URL=http://localhost
+```
+
+### 部署命令
+
+```bash
+cp .env.example .env
+# 编辑 .env 填写真实配置
+docker-compose up -d --build
+```
+
+### 默认账户
+
+- 管理员：`admin@leinao.ai` / `admin123`
+
+## 已知限制
+
+1. vCenter 7.0.3 REST API 不支持大部分过滤参数，需要使用 SOAP API 回退
+2. 获取所有 VM 路径时会产生大量 SOAP 请求，大规模环境下可能需要优化（缓存/批量查询）
+
+## 调试日志
+
+后端已添加详细日志，可通过 `docker logs` 查看：
+
+```
+[Sync] Starting sync for project 10
+[Sync] Project: xxx, FolderId: group-v25023, Path: /Leinao/vm/项目/xxx
+[vSphere] getVMsByFolder: group-v25023
+[vSphere] REST API not supported, falling back to SOAP
+[vSphere] Found folder: xxx
+[vSphere] getVMsByFolderName: xxx
+[vSphere] Total VMs: xxx
+[vSphere] Filtered VMs: 11
+[Sync] Found 11 VMs
+```
