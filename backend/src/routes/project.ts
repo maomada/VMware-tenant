@@ -47,6 +47,7 @@ router.delete('/:id', auth, async (req: AuthRequest, res) => {
 });
 
 router.post('/:id/sync', auth, async (req: AuthRequest, res) => {
+  console.log(`[Sync] Starting sync for project ${req.params.id}`);
   const project = await pool.query(
     'SELECT * FROM projects WHERE id = $1 AND user_id = $2',
     [req.params.id, req.user?.id]
@@ -55,15 +56,19 @@ router.post('/:id/sync', auth, async (req: AuthRequest, res) => {
 
   const p = project.rows[0];
   let folderId = p.vcenter_folder_id;
+  console.log(`[Sync] Project: ${p.name}, FolderId: ${folderId}, Path: ${p.vcenter_folder_path}`);
 
   if (!folderId) {
     const folderName = p.vcenter_folder_path.split('/').pop();
+    console.log(`[Sync] Looking up folder: ${folderName}`);
     folderId = await vsphere.getFolderByName(folderName);
     if (!folderId) return res.status(400).json({ error: 'Folder not found in vCenter' });
     await pool.query('UPDATE projects SET vcenter_folder_id = $1 WHERE id = $2', [folderId, p.id]);
   }
 
+  console.log(`[Sync] Getting VMs from folder: ${folderId}`);
   const vcenterVMs = await vsphere.getVMsByFolder(folderId);
+  console.log(`[Sync] Found ${vcenterVMs.length} VMs`);
   let synced = 0;
 
   for (const vm of vcenterVMs) {

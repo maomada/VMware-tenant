@@ -87,6 +87,42 @@ class VSphereService {
     }
   }
 
+  // 获取指定 folder 名称下的所有 VM（使用 SOAP API）
+  async getVMsByFolderName(folderName: string): Promise<any[]> {
+    try {
+      console.log(`[vSphere] getVMsByFolderName: ${folderName}`);
+      if (!this.soapSessionId) await this.soapLogin();
+      if (!this.sessionId) await this.authenticate();
+
+      // 获取所有 VM
+      const allVMs = await this.listVMs();
+      console.log(`[vSphere] Total VMs: ${allVMs.length}`);
+
+      // 使用 SOAP PropertyCollector 获取每个 VM 的 parent folder 链
+      const vmsWithPath = await Promise.all(
+        allVMs.map(async (vm: any) => {
+          try {
+            const path = await this.getVMInventoryPath(vm.vm);
+            return { ...vm, folderPath: path };
+          } catch {
+            return { ...vm, folderPath: '' };
+          }
+        })
+      );
+
+      // 过滤出路径中包含指定 folder 名称的 VM
+      const filtered = vmsWithPath.filter((vm: any) => vm.folderPath.includes(`/${folderName}/`));
+      console.log(`[vSphere] Filtered VMs: ${filtered.length}`);
+      if (filtered.length > 0) {
+        console.log(`[vSphere] Sample path: ${filtered[0].folderPath}`);
+      }
+      return filtered;
+    } catch (err) {
+      console.error('getVMsByFolderName error:', err);
+      return [];
+    }
+  }
+
   // 获取指定 folder 路径下的所有 VM（使用 SOAP API）
   async getVMsByFolderPath(folderPath: string): Promise<any[]> {
     try {
@@ -191,20 +227,24 @@ class VSphereService {
   // 兼容旧接口，但使用新的路径匹配逻辑
   async getVMsByFolder(folderId: string) {
     try {
+      console.log(`[vSphere] getVMsByFolder: ${folderId}`);
       if (!this.sessionId) await this.authenticate();
       // 先尝试 REST API
       const res = await this.client.get('/api/vcenter/vm', {
         headers: this.headers,
         params: { 'filter.folders': folderId }
       });
+      console.log(`[vSphere] REST API success, VMs: ${res.data?.length}`);
       return res.data;
     } catch (err: any) {
-      // 如果 REST API 不支持，回退到获取 folder 名称后用路径匹配
+      // 如果 REST API 不支持，回退到 SOAP API
       if (err.response?.status === 400) {
+        console.log(`[vSphere] REST API not supported, falling back to SOAP`);
         const folders = await this.client.get('/api/vcenter/folder', { headers: this.headers });
         const folder = folders.data?.find((f: any) => f.folder === folderId);
         if (folder) {
-          return this.getVMsByFolderPath(`/Leinao/vm/${folder.name}`);
+          console.log(`[vSphere] Found folder: ${folder.name}`);
+          return this.getVMsByFolderName(folder.name);
         }
       }
       console.error('getVMsByFolder error:', err);
