@@ -55,6 +55,16 @@ export default function AdminUsers() {
     }
   };
 
+  const verifyUser = async (id: number) => {
+    try {
+      await admin.verifyUser(id);
+      message.success('用户已验证');
+      load();
+    } catch (e: any) {
+      message.error(e.response?.data?.error || '验证失败');
+    }
+  };
+
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '用户名', dataIndex: 'username' },
@@ -66,6 +76,9 @@ export default function AdminUsers() {
     {
       title: '操作', render: (_: any, record: any) => record.role !== 'admin' && (
         <Space>
+          {!record.email_verified && (
+            <Button size="small" type="primary" onClick={() => verifyUser(record.id)}>验证邮箱</Button>
+          )}
           <Button size="small" onClick={() => setPasswordModal({ id: record.id, username: record.username })}>改密码</Button>
           <Button size="small" onClick={() => toggleStatus(record.id, record.status)}>
             {record.status === 'active' ? '禁用' : '启用'}

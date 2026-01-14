@@ -26,6 +26,14 @@ router.put('/users/:id/status', auth, adminOnly, async (req, res) => {
   res.json({ success: true });
 });
 
+router.put('/users/:id/verify', auth, adminOnly, async (req, res) => {
+  await pool.query(
+    `UPDATE users SET email_verified = TRUE, status = 'active', verification_token = NULL WHERE id = $1`,
+    [req.params.id]
+  );
+  res.json({ success: true });
+});
+
 router.delete('/users/:id', auth, adminOnly, async (req, res) => {
   await pool.query('DELETE FROM users WHERE id = $1 AND role != $2', [req.params.id, 'admin']);
   res.json({ success: true });

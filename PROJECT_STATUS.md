@@ -54,6 +54,7 @@ VMware tenant/
 - 用户注册/登录（JWT 认证）
 - 邮箱验证
 - 角色权限（admin/user）
+- 管理员可手动验证用户邮箱
 
 ### 2. 项目管理
 - 项目对应 vCenter Folder
@@ -126,7 +127,11 @@ VMware tenant/
 | `GET /api/billing/usage` | 获取使用明细 |
 | `POST /api/billing/generate` | 生成账单 (admin) |
 | `POST /api/billing/refresh` | 刷新账单数据 (admin) |
-| `GET /api/admin/*` | 管理员功能 |
+| `GET /api/admin/users` | 获取用户列表 (admin) |
+| `PUT /api/admin/users/:id/verify` | 手动验证用户邮箱 (admin) |
+| `PUT /api/admin/users/:id/status` | 更新用户状态 (admin) |
+| `PUT /api/admin/users/:id/password` | 重置用户密码 (admin) |
+| `DELETE /api/admin/users/:id` | 删除用户 (admin) |
 
 ## 部署说明
 

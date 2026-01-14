@@ -51,6 +51,7 @@ export const admin = {
   users: () => api.get('/admin/users'),
   updatePassword: (id: number, password: string) => api.put(`/admin/users/${id}/password`, { password }),
   updateUserStatus: (id: number, status: string) => api.put(`/admin/users/${id}/status`, { status }),
+  verifyUser: (id: number) => api.put(`/admin/users/${id}/verify`),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
   projects: () => api.get('/admin/projects'),
   updateProjectUser: (id: number, userId: number) => api.put(`/admin/projects/${id}/user`, { userId }),

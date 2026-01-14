@@ -85,4 +85,4 @@ INSERT INTO pricing_config (resource_type, unit_price) VALUES
 
 -- 创建默认管理员 (密码: admin123, 邮箱: admin@leinao.ai)
 INSERT INTO users (username, email, password_hash, role, email_verified, status) VALUES
-('admin', 'admin@leinao.ai', '$2b$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'admin', TRUE, 'active');
+('admin', 'admin@leinao.ai', '$2b$10$rB5NaTlxfHbxRN152ivoEegVw3uVKfC4sbF6Dy9PNAbdeRAgp2m.O', 'admin', TRUE, 'active');
