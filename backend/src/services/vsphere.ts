@@ -3,12 +3,20 @@ import https from 'https';
 
 class VSphereService {
   private client: AxiosInstance;
+  private soapClient: AxiosInstance;
   private sessionId: string | null = null;
+  private soapSessionId: string | null = null;
 
   constructor() {
+    const httpsAgent = new https.Agent({ rejectUnauthorized: false });
     this.client = axios.create({
       baseURL: process.env.VCENTER_URL,
-      httpsAgent: new https.Agent({ rejectUnauthorized: false })
+      httpsAgent
+    });
+    this.soapClient = axios.create({
+      baseURL: process.env.VCENTER_URL,
+      httpsAgent,
+      headers: { 'Content-Type': 'text/xml' }
     });
   }
 
@@ -17,6 +25,22 @@ class VSphereService {
       auth: { username: process.env.VCENTER_USER!, password: process.env.VCENTER_PASSWORD! }
     });
     this.sessionId = res.data;
+  }
+
+  private async soapLogin(): Promise<void> {
+    const loginXml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:Login>
+      <urn:_this type="SessionManager">SessionManager</urn:_this>
+      <urn:userName>${process.env.VCENTER_USER}</urn:userName>
+      <urn:password>${process.env.VCENTER_PASSWORD}</urn:password>
+    </urn:Login>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+    const res = await this.soapClient.post('/sdk', loginXml);
+    const match = res.headers['set-cookie']?.find((c: string) => c.includes('vmware_soap_session'));
+    this.soapSessionId = match?.split(';')[0] || null;
   }
 
   private get headers() {
@@ -54,7 +78,6 @@ class VSphereService {
   async getFolderByName(folderName: string): Promise<string | null> {
     try {
       if (!this.sessionId) await this.authenticate();
-      // 获取所有 folder，在本地过滤（兼容不支持 filter 参数的 vCenter 版本）
       const res = await this.client.get('/api/vcenter/folder', { headers: this.headers });
       const folder = res.data?.find((f: any) => f.name === folderName && f.type === 'VIRTUAL_MACHINE');
       return folder?.folder || null;
@@ -64,13 +87,129 @@ class VSphereService {
     }
   }
 
-  async getVMsByFolder(folderId: string) {
-    if (!this.sessionId) await this.authenticate();
-    const res = await this.client.get('/api/vcenter/vm', {
-      headers: this.headers,
-      params: { 'filter.folders': folderId }
+  // 获取指定 folder 路径下的所有 VM（使用 SOAP API）
+  async getVMsByFolderPath(folderPath: string): Promise<any[]> {
+    try {
+      if (!this.soapSessionId) await this.soapLogin();
+      if (!this.sessionId) await this.authenticate();
+
+      // 获取所有 VM
+      const allVMs = await this.listVMs();
+
+      // 使用 SOAP PropertyCollector 获取每个 VM 的 parent folder 链
+      const vmsWithPath = await Promise.all(
+        allVMs.map(async (vm: any) => {
+          try {
+            const path = await this.getVMInventoryPath(vm.vm);
+            return { ...vm, folderPath: path };
+          } catch {
+            return { ...vm, folderPath: '' };
+          }
+        })
+      );
+
+      // 过滤出指定 folder 路径下的 VM
+      return vmsWithPath.filter((vm: any) => vm.folderPath.startsWith(folderPath));
+    } catch (err) {
+      console.error('getVMsByFolderPath error:', err);
+      return [];
+    }
+  }
+
+  // 获取 VM 的完整 inventory 路径
+  private async getVMInventoryPath(vmId: string): Promise<string> {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:RetrieveProperties>
+      <urn:_this type="PropertyCollector">propertyCollector</urn:_this>
+      <urn:specSet>
+        <urn:propSet>
+          <urn:type>VirtualMachine</urn:type>
+          <urn:pathSet>parent</urn:pathSet>
+          <urn:pathSet>name</urn:pathSet>
+        </urn:propSet>
+        <urn:objectSet>
+          <urn:obj type="VirtualMachine">${vmId}</urn:obj>
+        </urn:objectSet>
+      </urn:specSet>
+    </urn:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const res = await this.soapClient.post('/sdk', xml, {
+      headers: { Cookie: this.soapSessionId || '' }
     });
-    return res.data;
+
+    // 解析响应获取 parent folder，然后递归获取完整路径
+    const parentMatch = res.data.match(/<val[^>]*type="Folder"[^>]*>([^<]+)<\/val>/);
+    const nameMatch = res.data.match(/<name>name<\/name><val[^>]*>([^<]+)<\/val>/);
+
+    if (parentMatch && nameMatch) {
+      const parentPath = await this.getFolderPath(parentMatch[1]);
+      return `${parentPath}/${nameMatch[1]}`;
+    }
+    return nameMatch?.[1] || '';
+  }
+
+  // 递归获取 folder 路径
+  private async getFolderPath(folderId: string): Promise<string> {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:RetrieveProperties>
+      <urn:_this type="PropertyCollector">propertyCollector</urn:_this>
+      <urn:specSet>
+        <urn:propSet>
+          <urn:type>Folder</urn:type>
+          <urn:pathSet>parent</urn:pathSet>
+          <urn:pathSet>name</urn:pathSet>
+        </urn:propSet>
+        <urn:objectSet>
+          <urn:obj type="Folder">${folderId}</urn:obj>
+        </urn:objectSet>
+      </urn:specSet>
+    </urn:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const res = await this.soapClient.post('/sdk', xml, {
+      headers: { Cookie: this.soapSessionId || '' }
+    });
+
+    // parent 可能是 Folder 或 Datacenter
+    const parentFolderMatch = res.data.match(/<val[^>]*type="Folder"[^>]*>([^<]+)<\/val>/);
+    const nameMatch = res.data.match(/<name>name<\/name><val[^>]*>([^<]+)<\/val>/);
+
+    if (parentFolderMatch && nameMatch) {
+      const parentPath = await this.getFolderPath(parentFolderMatch[1]);
+      return `${parentPath}/${nameMatch[1]}`;
+    }
+    return nameMatch?.[1] ? `/${nameMatch[1]}` : '';
+  }
+
+  // 兼容旧接口，但使用新的路径匹配逻辑
+  async getVMsByFolder(folderId: string) {
+    try {
+      if (!this.sessionId) await this.authenticate();
+      // 先尝试 REST API
+      const res = await this.client.get('/api/vcenter/vm', {
+        headers: this.headers,
+        params: { 'filter.folders': folderId }
+      });
+      return res.data;
+    } catch (err: any) {
+      // 如果 REST API 不支持，回退到获取 folder 名称后用路径匹配
+      if (err.response?.status === 400) {
+        const folders = await this.client.get('/api/vcenter/folder', { headers: this.headers });
+        const folder = folders.data?.find((f: any) => f.folder === folderId);
+        if (folder) {
+          return this.getVMsByFolderPath(`/Leinao/vm/${folder.name}`);
+        }
+      }
+      console.error('getVMsByFolder error:', err);
+      return [];
+    }
   }
 }
 
