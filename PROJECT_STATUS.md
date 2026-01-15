@@ -64,6 +64,7 @@ VMware tenant/
 - 与 VMware vCenter 集成
 - 支持按 folder 名称同步 VM
 - 兼容不支持 REST API 过滤的 vCenter 版本（使用 SOAP API 回退）
+- 同步 GPU 数量与型号（解析 PCI 直通设备，必要时匹配 Host PCI 设备名称）
 
 ### 4. 计费系统（已完善）
 - 资源使用记录（CPU/内存/存储/GPU 数量/GPU 类型）
@@ -87,6 +88,11 @@ VMware tenant/
    - 使用 SOAP API 递归获取每个 VM 的完整 inventory 路径
    - 按 folder 名称过滤：`vm.folderPath.includes('/${folderName}/')`
 
+3. **GPU 识别**
+   - 使用 SOAP API 读取 `config.hardware.device` 与 `runtime.host`
+   - 统计 `VirtualPCIPassthrough` 设备数量作为 GPU 数量
+   - 若 `deviceName` 缺失，匹配 Host PCI 设备名称得到 GPU 型号
+
 ### vsphere.ts 关键方法
 
 | 方法 | 说明 |
@@ -98,6 +104,7 @@ VMware tenant/
 | `getVMsByFolderName(name)` | 使用 SOAP API 按 folder 名称获取 VM |
 | `getVMInventoryPath(vmId)` | 获取 VM 的完整路径 |
 | `getFolderPath(folderId)` | 递归获取 folder 路径 |
+| `getVmGpuInfo(vmId)` | 解析 VM 的 GPU 数量与型号 |
 
 ## 数据库表结构
 
@@ -176,6 +183,7 @@ docker-compose up -d --build
 
 1. vCenter 7.0.3 REST API 不支持大部分过滤参数，需要使用 SOAP API 回退
 2. 获取所有 VM 路径时会产生大量 SOAP 请求，大规模环境下可能需要优化（缓存/批量查询）
+3. GPU 型号依赖 Host PCI 设备名称或 vCenter 返回的设备信息，缺失时会为空
 
 ## 调试日志
 
