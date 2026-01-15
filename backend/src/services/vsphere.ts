@@ -6,6 +6,8 @@ class VSphereService {
   private soapClient: AxiosInstance;
   private sessionId: string | null = null;
   private soapSessionId: string | null = null;
+  private hostPciDeviceCache: Map<string, string> | null = null;
+  private hostPciDeviceCacheAt = 0;
 
   constructor() {
     const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -45,6 +47,189 @@ class VSphereService {
 
   private get headers() {
     return { 'vmware-api-session-id': this.sessionId };
+  }
+
+  private decodeXml(value: string) {
+    return value
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'");
+  }
+
+  private async soapRequest(xml: string): Promise<string> {
+    if (!this.soapSessionId) await this.soapLogin();
+    const res = await this.soapClient.post('/sdk', xml, {
+      headers: { Cookie: this.soapSessionId || '' }
+    });
+    return res.data;
+  }
+
+  private async listHosts(): Promise<string[]> {
+    if (!this.sessionId) await this.authenticate();
+    const res = await this.client.get('/api/vcenter/host', { headers: this.headers });
+    return (res.data || []).map((h: any) => h.host).filter(Boolean);
+  }
+
+  private parseHostPciDevices(xml: string) {
+    const devices: { id: string; deviceName: string | null }[] = [];
+    const blockRegex = /<HostPciDevice(?:\s[^>]*)?>([\s\S]*?)<\/HostPciDevice>/g;
+    const valRegex = /<val[^>]*xsi:type="HostPciDevice"[^>]*>([\s\S]*?)<\/val>/g;
+
+    const parseBlock = (block: string) => {
+      const idMatch = block.match(/<id>([^<]+)<\/id>/);
+      const nameMatch = block.match(/<deviceName>([^<]+)<\/deviceName>/);
+      if (!idMatch) return;
+      devices.push({
+        id: this.decodeXml(idMatch[1]),
+        deviceName: nameMatch ? this.decodeXml(nameMatch[1]) : null
+      });
+    };
+
+    let match: RegExpExecArray | null;
+    while ((match = blockRegex.exec(xml)) !== null) {
+      parseBlock(match[1]);
+    }
+    while ((match = valRegex.exec(xml)) !== null) {
+      parseBlock(match[1]);
+    }
+
+    return devices;
+  }
+
+  private async getHostPciDeviceMap() {
+    const now = Date.now();
+    if (this.hostPciDeviceCache && now - this.hostPciDeviceCacheAt < 5 * 60 * 1000) {
+      return this.hostPciDeviceCache;
+    }
+
+    const hostIds = await this.listHosts();
+    const deviceMap = new Map<string, string>();
+
+    for (const hostId of hostIds) {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:RetrieveProperties>
+      <urn:_this type="PropertyCollector">propertyCollector</urn:_this>
+      <urn:specSet>
+        <urn:propSet>
+          <urn:type>HostSystem</urn:type>
+          <urn:pathSet>hardware.pciDevice</urn:pathSet>
+        </urn:propSet>
+        <urn:objectSet>
+          <urn:obj type="HostSystem">${hostId}</urn:obj>
+        </urn:objectSet>
+      </urn:specSet>
+    </urn:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+      const data = await this.soapRequest(xml);
+      const devices = this.parseHostPciDevices(data);
+      for (const device of devices) {
+        if (device.deviceName) {
+          deviceMap.set(`${hostId}:${device.id}`, device.deviceName);
+        }
+      }
+    }
+
+    this.hostPciDeviceCache = deviceMap;
+    this.hostPciDeviceCacheAt = now;
+    return deviceMap;
+  }
+
+  private extractPassthroughDevices(xml: string) {
+    const devices: { id: string | null; deviceName: string | null }[] = [];
+    const virtualDeviceRegex = /<VirtualDevice[^>]*xsi:type="VirtualPCIPassthrough"[^>]*>([\s\S]*?)<\/VirtualDevice>/g;
+    const passthroughRegex = /<VirtualPCIPassthrough[^>]*>([\s\S]*?)<\/VirtualPCIPassthrough>/g;
+
+    const parseBlock = (block: string) => {
+      const backingMatch = block.match(/<backing[\s\S]*?<\/backing>/);
+      const source = backingMatch ? backingMatch[0] : block;
+      const idMatch = source.match(/<id>([^<]+)<\/id>/);
+      const nameMatch = source.match(/<deviceName>([^<]+)<\/deviceName>/);
+      devices.push({
+        id: idMatch ? this.decodeXml(idMatch[1]) : null,
+        deviceName: nameMatch ? this.decodeXml(nameMatch[1]) : null
+      });
+    };
+
+    let match: RegExpExecArray | null;
+    while ((match = virtualDeviceRegex.exec(xml)) !== null) {
+      parseBlock(match[1]);
+    }
+    while ((match = passthroughRegex.exec(xml)) !== null) {
+      parseBlock(match[1]);
+    }
+
+    const deduped: { id: string | null; deviceName: string | null }[] = [];
+    const seen = new Set<string>();
+    for (const device of devices) {
+      const key = `${device.id || ''}:${device.deviceName || ''}`;
+      if (device.id || device.deviceName) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      deduped.push(device);
+    }
+
+    return deduped;
+  }
+
+  async getVmGpuInfo(vmId: string): Promise<{ gpuCount: number; gpuType: string | null }> {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:RetrieveProperties>
+      <urn:_this type="PropertyCollector">propertyCollector</urn:_this>
+      <urn:specSet>
+        <urn:propSet>
+          <urn:type>VirtualMachine</urn:type>
+          <urn:pathSet>config.hardware.device</urn:pathSet>
+          <urn:pathSet>runtime.host</urn:pathSet>
+        </urn:propSet>
+        <urn:objectSet>
+          <urn:obj type="VirtualMachine">${vmId}</urn:obj>
+        </urn:objectSet>
+      </urn:specSet>
+    </urn:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const data = await this.soapRequest(xml);
+    const hostMatch = data.match(/<name>runtime\.host<\/name>\s*<val[^>]*>([^<]+)<\/val>/);
+    const hostRef = hostMatch ? this.decodeXml(hostMatch[1]) : null;
+
+    const passthroughDevices = this.extractPassthroughDevices(data);
+    const gpuCount = passthroughDevices.length;
+    if (!gpuCount) {
+      return { gpuCount: 0, gpuType: null };
+    }
+
+    const gpuTypes: string[] = [];
+    const needsHostMap = passthroughDevices.some((device) => !device.deviceName && device.id);
+    let hostMap: Map<string, string> | null = null;
+    if (needsHostMap && hostRef) {
+      try {
+        hostMap = await this.getHostPciDeviceMap();
+      } catch (err) {
+        console.warn('[vSphere] Host PCI device query failed:', err);
+      }
+    }
+    for (const device of passthroughDevices) {
+      let name = device.deviceName;
+      if (!name && hostRef && device.id && hostMap) {
+        name = hostMap.get(`${hostRef}:${device.id}`) || null;
+      }
+      if (name) {
+        gpuTypes.push(name);
+      }
+    }
+
+    const uniqueTypes = Array.from(new Set(gpuTypes));
+    return { gpuCount, gpuType: uniqueTypes.length ? uniqueTypes.join(', ') : null };
   }
 
   async listVMs() {

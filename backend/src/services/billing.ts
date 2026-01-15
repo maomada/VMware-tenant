@@ -37,12 +37,14 @@ export async function syncVMConfigs() {
 
     for (const vm of vcenterVMs) {
       const details = await vsphere.getVM(vm.vm);
+      const gpuInfo = await vsphere.getVmGpuInfo(vm.vm);
       const newConfig = {
         name: vm.name,
         cpu_cores: details.cpu?.count || 1,
         memory_gb: Math.ceil((details.memory?.size_MiB || 1024) / 1024),
         storage_gb: Math.ceil((details.disks ? Object.values(details.disks).reduce((sum: number, d: any) => sum + (d.capacity || 0), 0) : 0) / 1024 / 1024 / 1024),
-        gpu_count: details.hardware?.pci_devices?.filter((d: any) => d.type === 'PASSTHROUGH')?.length || 0,
+        gpu_count: gpuInfo.gpuCount,
+        gpu_type: gpuInfo.gpuType,
         status: vm.power_state || 'unknown'
       };
 
@@ -55,19 +57,20 @@ export async function syncVMConfigs() {
         if (old.cpu_cores !== newConfig.cpu_cores ||
             old.memory_gb !== newConfig.memory_gb ||
             old.storage_gb !== newConfig.storage_gb ||
-            old.gpu_count !== newConfig.gpu_count) {
+            old.gpu_count !== newConfig.gpu_count ||
+            (old.gpu_type || null) !== (newConfig.gpu_type || null)) {
           console.log(`[Billing] VM ${vm.name} config changed`);
         }
 
         await pool.query(`
-          UPDATE virtual_machines SET name=$1, cpu_cores=$2, memory_gb=$3, storage_gb=$4, gpu_count=$5, status=$6
-          WHERE vcenter_vm_id=$7
-        `, [newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb, newConfig.gpu_count, newConfig.status, vm.vm]);
+          UPDATE virtual_machines SET name=$1, cpu_cores=$2, memory_gb=$3, storage_gb=$4, gpu_count=$5, gpu_type=$6, status=$7
+          WHERE vcenter_vm_id=$8
+        `, [newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb, newConfig.gpu_count, newConfig.gpu_type, newConfig.status, vm.vm]);
       } else {
         await pool.query(`
-          INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, status)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        `, [project.id, vm.vm, newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb, newConfig.gpu_count, newConfig.status]);
+          INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [project.id, vm.vm, newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb, newConfig.gpu_count, newConfig.gpu_type, newConfig.status]);
       }
     }
   }

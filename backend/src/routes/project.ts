@@ -73,11 +73,12 @@ router.post('/:id/sync', auth, async (req: AuthRequest, res) => {
 
   for (const vm of vcenterVMs) {
     const details = await vsphere.getVM(vm.vm);
+    const gpuInfo = await vsphere.getVmGpuInfo(vm.vm);
     await pool.query(
-      `INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (vcenter_vm_id) DO UPDATE SET
-         project_id = $1, name = $3, cpu_cores = $4, memory_gb = $5, storage_gb = $6, status = $8`,
+         project_id = $1, name = $3, cpu_cores = $4, memory_gb = $5, storage_gb = $6, gpu_count = $7, gpu_type = $8, status = $9`,
       [
         p.id,
         vm.vm,
@@ -85,7 +86,8 @@ router.post('/:id/sync', auth, async (req: AuthRequest, res) => {
         details.cpu?.count || 1,
         Math.ceil((details.memory?.size_MiB || 1024) / 1024),
         Math.ceil((details.disks ? Object.values(details.disks).reduce((sum: number, d: any) => sum + (d.capacity || 0), 0) : 0) / 1024 / 1024 / 1024),
-        0,
+        gpuInfo.gpuCount,
+        gpuInfo.gpuType,
         vm.power_state || 'unknown'
       ]
     );
