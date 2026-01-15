@@ -51,7 +51,8 @@ export default function VMs() {
     { title: 'CPU', dataIndex: 'cpu_cores', render: (v: number) => `${v} 核` },
     { title: '内存', dataIndex: 'memory_gb', render: (v: number) => `${v} GB` },
     { title: '存储', dataIndex: 'storage_gb', render: (v: number) => `${v} GB` },
-    { title: 'GPU', dataIndex: 'gpu_count' },
+    { title: 'GPU数量', dataIndex: 'gpu_count' },
+    { title: 'GPU型号', dataIndex: 'gpu_type', render: (v: string) => v || '-' },
     {
       title: '状态', dataIndex: 'status', render: (v: string) => (
         <Tag color={v === 'POWERED_ON' ? 'green' : v === 'POWERED_OFF' ? 'red' : 'default'}>{v}</Tag>
