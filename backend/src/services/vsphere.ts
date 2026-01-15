@@ -142,7 +142,7 @@ class VSphereService {
 
   private extractPassthroughDevices(xml: string) {
     const devices: { id: string | null; deviceName: string | null }[] = [];
-    const virtualDeviceRegex = /<VirtualDevice[^>]*xsi:type="VirtualPCIPassthrough"[^>]*>([\s\S]*?)<\/VirtualDevice>/g;
+    const typedPassthroughRegex = /<([A-Za-z0-9:_-]+)[^>]*xsi:type="[^"]*VirtualPCIPassthrough[^"]*"[^>]*>([\s\S]*?)<\/\1>/g;
     const passthroughRegex = /<VirtualPCIPassthrough[^>]*>([\s\S]*?)<\/VirtualPCIPassthrough>/g;
 
     const parseBlock = (block: string) => {
@@ -150,15 +150,20 @@ class VSphereService {
       const source = backingMatch ? backingMatch[0] : block;
       const idMatch = source.match(/<id>([^<]+)<\/id>/);
       const nameMatch = source.match(/<deviceName>([^<]+)<\/deviceName>/);
+      const vgpuMatch = source.match(/<vgpu>([^<]+)<\/vgpu>/);
       devices.push({
         id: idMatch ? this.decodeXml(idMatch[1]) : null,
-        deviceName: nameMatch ? this.decodeXml(nameMatch[1]) : null
+        deviceName: nameMatch
+          ? this.decodeXml(nameMatch[1])
+          : vgpuMatch
+            ? this.decodeXml(vgpuMatch[1])
+            : null
       });
     };
 
     let match: RegExpExecArray | null;
-    while ((match = virtualDeviceRegex.exec(xml)) !== null) {
-      parseBlock(match[1]);
+    while ((match = typedPassthroughRegex.exec(xml)) !== null) {
+      parseBlock(match[2]);
     }
     while ((match = passthroughRegex.exec(xml)) !== null) {
       parseBlock(match[1]);
@@ -199,11 +204,15 @@ class VSphereService {
 </soapenv:Envelope>`;
 
     const data = await this.soapRequest(xml);
+    const debug = process.env.VSPHERE_GPU_DEBUG === '1';
     const hostMatch = data.match(/<name>runtime\.host<\/name>\s*<val[^>]*>([^<]+)<\/val>/);
     const hostRef = hostMatch ? this.decodeXml(hostMatch[1]) : null;
 
     const passthroughDevices = this.extractPassthroughDevices(data);
     const gpuCount = passthroughDevices.length;
+    if (debug) {
+      console.log(`[vSphere] GPU debug vm=${vmId} host=${hostRef || 'n/a'} passthrough=${gpuCount}`);
+    }
     if (!gpuCount) {
       return { gpuCount: 0, gpuType: null };
     }
@@ -229,6 +238,9 @@ class VSphereService {
     }
 
     const uniqueTypes = Array.from(new Set(gpuTypes));
+    if (debug) {
+      console.log(`[vSphere] GPU debug vm=${vmId} types=${uniqueTypes.join(', ') || 'unknown'}`);
+    }
     return { gpuCount, gpuType: uniqueTypes.length ? uniqueTypes.join(', ') : null };
   }
 
