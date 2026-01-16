@@ -156,8 +156,14 @@ class VSphereService {
 
   private extractPassthroughDevices(xml: string) {
     const devices: { id: string | null; deviceName: string | null }[] = [];
+    const debug = process.env.VSPHERE_GPU_DEBUG === '1';
+
+    // Match VirtualPCIPassthrough devices
     const typedPassthroughRegex = /<([A-Za-z0-9:_-]+)[^>]*xsi:type="[^"]*VirtualPCIPassthrough[^"]*"[^>]*>([\s\S]*?)<\/\1>/g;
     const passthroughRegex = /<VirtualPCIPassthrough[^>]*>([\s\S]*?)<\/VirtualPCIPassthrough>/g;
+
+    // Match PCI device (label="PCI device X") - GPU passthrough in some vSphere versions
+    const pciDeviceRegex = /<VirtualDevice[^>]*xsi:type="VirtualDevice"[^>]*>([\s\S]*?)<\/VirtualDevice>/g;
 
     const parseBlock = (block: string) => {
       const backingMatch = block.match(/<backing[\s\S]*?<\/backing>/);
@@ -181,6 +187,24 @@ class VSphereService {
     }
     while ((match = passthroughRegex.exec(xml)) !== null) {
       parseBlock(match[1]);
+    }
+
+    // Check for PCI device with label "PCI device X"
+    while ((match = pciDeviceRegex.exec(xml)) !== null) {
+      const block = match[1];
+      const labelMatch = block.match(/<label>([^<]+)<\/label>/);
+      if (labelMatch && /^PCI device \d+$/i.test(labelMatch[1])) {
+        if (debug) {
+          console.log(`[vSphere] GPU debug found PCI device: ${labelMatch[1]}`);
+        }
+        // Extract backing info for PCI passthrough device
+        const backingStr = block.match(/<backing[\s\S]*?<\/backing>/);
+        const idMatch = backingStr ? backingStr[0].match(/<id>([^<]+)<\/id>/) : null;
+        devices.push({
+          id: idMatch ? this.decodeXml(idMatch[1]) : null,
+          deviceName: null // Will be resolved from host PCI device map
+        });
+      }
     }
 
     const deduped: { id: string | null; deviceName: string | null }[] = [];
