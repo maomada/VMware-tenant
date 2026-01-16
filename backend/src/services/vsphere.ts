@@ -197,12 +197,10 @@ class VSphereService {
         if (debug) {
           console.log(`[vSphere] GPU debug found PCI device: ${labelMatch[1]}`);
         }
-        // Extract backing info for PCI passthrough device
-        const backingStr = block.match(/<backing[\s\S]*?<\/backing>/);
-        const idMatch = backingStr ? backingStr[0].match(/<id>([^<]+)<\/id>/) : null;
+        // Mark as PCI passthrough device (will resolve GPU type from host)
         devices.push({
-          id: idMatch ? this.decodeXml(idMatch[1]) : null,
-          deviceName: null // Will be resolved from host PCI device map
+          id: 'pci-passthrough',
+          deviceName: null
         });
       }
     }
@@ -267,27 +265,48 @@ class VSphereService {
     }
 
     const gpuTypes: string[] = [];
+    const hasPciPassthrough = passthroughDevices.some((d) => d.id === 'pci-passthrough');
     const needsHostMap = passthroughDevices.some((device) => !device.deviceName && device.id);
-    let hostMap: Map<string, string> | null = null;
+
     if (needsHostMap && hostRef) {
       try {
-        hostMap = await this.getHostPciDeviceMap();
+        const hostMap = await this.getHostPciDeviceMap();
         if (debug && hostMap) {
           console.log(
             `[vSphere] GPU debug vm=${vmId} hostMap keys=${Array.from(hostMap.keys()).join(', ') || 'none'}`
           );
         }
+
+        // For pci-passthrough devices, find GPU from host's PCI devices
+        if (hasPciPassthrough && hostMap) {
+          for (const [key, deviceName] of hostMap.entries()) {
+            if (key.startsWith(`${hostRef}:`) && /geforce|tesla|quadro|rtx|gtx/i.test(deviceName)) {
+              gpuTypes.push(deviceName);
+              if (debug) {
+                console.log(`[vSphere] GPU debug vm=${vmId} found GPU from host: ${deviceName}`);
+              }
+            }
+          }
+        }
+
+        // For devices with specific IDs
+        for (const device of passthroughDevices) {
+          if (device.id && device.id !== 'pci-passthrough') {
+            const name = device.deviceName || hostMap?.get(`${hostRef}:${device.id}`) || null;
+            if (name) {
+              gpuTypes.push(name);
+            }
+          }
+        }
       } catch (err) {
         console.warn('[vSphere] Host PCI device query failed:', err);
       }
     }
+
+    // Add any devices that already have names
     for (const device of passthroughDevices) {
-      let name = device.deviceName;
-      if (!name && hostRef && device.id && hostMap) {
-        name = hostMap.get(`${hostRef}:${device.id}`) || null;
-      }
-      if (name) {
-        gpuTypes.push(name);
+      if (device.deviceName) {
+        gpuTypes.push(device.deviceName);
       }
     }
 
