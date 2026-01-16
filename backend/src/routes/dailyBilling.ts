@@ -6,7 +6,8 @@ import {
   cleanupOldBills,
   syncVMConfigsWithBinding,
   getDailyBills,
-  getBillSummary
+  getBillSummary,
+  getStatsByDimension
 } from '../services/dailyBilling';
 
 const router = Router();
@@ -39,6 +40,26 @@ router.get('/summary', auth, async (req: AuthRequest, res: Response) => {
   });
 
   res.json(summary);
+});
+
+// 获取账单统计（按日/月/季度聚合）
+router.get('/stats', auth, async (req: AuthRequest, res: Response) => {
+  const isAdmin = req.user?.role === 'admin';
+  const { startDate, endDate, projectId, dimension } = req.query;
+
+  if (!dimension || !['day', 'month', 'quarter'].includes(dimension as string)) {
+    return res.status(400).json({ error: 'dimension must be one of: day, month, quarter' });
+  }
+
+  const stats = await getStatsByDimension({
+    dimension: dimension as any,
+    projectId: projectId ? parseInt(projectId as string) : undefined,
+    startDate: startDate as string,
+    endDate: endDate as string,
+    userId: isAdmin ? undefined : req.user?.id
+  });
+
+  res.json(stats);
 });
 
 // 导出Excel账单

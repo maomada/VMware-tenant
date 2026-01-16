@@ -85,4 +85,10 @@ ports:
 - 导出格式为 Excel (.xlsx)
 - 包含：项目名称、虚机名称、虚机ID、计费日期、资源配置、单价、费用等
 
+### 统计功能
+- 支持按日 / 月 / 季度(三个月)维度汇总展示
+- 统计接口：`GET /api/daily-billing/stats`
+  - Query 参数：`dimension=day|month|quarter`，可选 `startDate`、`endDate`、`projectId`
+  - 返回字段：`period`(周期)、`vm_count`(VM数)、`bill_days`(计费天数)、`total_cost`(金额合计)
+
 详细技术文档请参考 [PROJECT_STATUS.md](PROJECT_STATUS.md)

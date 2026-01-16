@@ -224,3 +224,74 @@ export async function getBillSummary(options: {
   const result = await pool.query(query, params);
   return result.rows;
 }
+
+export type DailyBillingStatsDimension = 'day' | 'month' | 'quarter';
+
+// Aggregate daily bills by time bucket (day/month/quarter).
+export async function getStatsByDimension(options: {
+  dimension: DailyBillingStatsDimension;
+  projectId?: number;
+  startDate?: string;
+  endDate?: string;
+  userId?: number;
+}) {
+  let periodSelect: string;
+  let groupByExpr: string;
+  let orderByExpr: string;
+
+  switch (options.dimension) {
+    case 'day':
+      periodSelect = "to_char(db.bill_date, 'YYYY-MM-DD')";
+      groupByExpr = 'db.bill_date';
+      orderByExpr = 'db.bill_date';
+      break;
+    case 'month':
+      periodSelect = "to_char(date_trunc('month', db.bill_date), 'YYYY-MM')";
+      groupByExpr = "date_trunc('month', db.bill_date)";
+      orderByExpr = "date_trunc('month', db.bill_date)";
+      break;
+    case 'quarter':
+      periodSelect =
+        "to_char(date_trunc('quarter', db.bill_date), 'YYYY') || '-Q' || extract(quarter from db.bill_date)::int";
+      groupByExpr = "date_trunc('quarter', db.bill_date)";
+      orderByExpr = "date_trunc('quarter', db.bill_date)";
+      break;
+    default:
+      throw new Error(`Invalid dimension: ${options.dimension}`);
+  }
+
+  let query = `
+    SELECT
+      ${periodSelect} as period,
+      COUNT(DISTINCT db.vm_id) as vm_count,
+      COUNT(db.id) as bill_days,
+      COALESCE(SUM(db.daily_cost), 0) as total_cost
+    FROM daily_bills db
+    JOIN projects p ON db.project_id = p.id
+    WHERE 1=1
+  `;
+  const params: any[] = [];
+  let paramIndex = 1;
+
+  if (options.projectId) {
+    query += ` AND db.project_id = $${paramIndex++}`;
+    params.push(options.projectId);
+  }
+  if (options.userId) {
+    query += ` AND p.user_id = $${paramIndex++}`;
+    params.push(options.userId);
+  }
+  if (options.startDate) {
+    query += ` AND db.bill_date >= $${paramIndex++}`;
+    params.push(options.startDate);
+  }
+  if (options.endDate) {
+    query += ` AND db.bill_date <= $${paramIndex++}`;
+    params.push(options.endDate);
+  }
+
+  query += ` GROUP BY ${groupByExpr} ORDER BY ${orderByExpr} DESC`;
+
+  const result = await pool.query(query, params);
+  return result.rows;
+}

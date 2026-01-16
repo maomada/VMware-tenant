@@ -52,6 +52,8 @@ export const dailyBilling = {
     api.get('/daily-billing/daily', { params }),
   summary: (params?: { startDate?: string; endDate?: string; projectId?: number }) =>
     api.get('/daily-billing/summary', { params }),
+  stats: (params: { dimension: 'day' | 'month' | 'quarter'; startDate?: string; endDate?: string; projectId?: number }) =>
+    api.get('/daily-billing/stats', { params }),
   exportUrl: (type: 'day' | 'month' | 'quarter', params?: { startDate?: string; endDate?: string; projectId?: number }) => {
     const query = new URLSearchParams({ type, ...params } as any).toString();
     return `/api/daily-billing/export?${query}`;
