@@ -33,7 +33,6 @@ export default function AdminVMs() {
   };
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '名称', dataIndex: 'name' },
     { title: '项目', dataIndex: 'project_name' },
     { title: '用户', dataIndex: 'username' },

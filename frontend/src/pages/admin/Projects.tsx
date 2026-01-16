@@ -33,7 +33,6 @@ export default function AdminProjects() {
   };
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '项目名称', dataIndex: 'name' },
     { title: 'vCenter Folder', dataIndex: 'vcenter_folder_path' },
     { title: '绑定用户', dataIndex: 'username' },

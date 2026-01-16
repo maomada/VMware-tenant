@@ -59,7 +59,6 @@ export default function Projects() {
   };
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '项目名称', dataIndex: 'name' },
     { title: 'vCenter Folder', dataIndex: 'vcenter_folder_path' },
     {

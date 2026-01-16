@@ -45,7 +45,6 @@ export default function VMs() {
   };
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '名称', dataIndex: 'name' },
     { title: '项目', dataIndex: 'project_name' },
     { title: 'CPU', dataIndex: 'cpu_cores', render: (v: number) => `${v} 核` },
