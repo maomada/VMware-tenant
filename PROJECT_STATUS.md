@@ -26,11 +26,13 @@ VMware tenant/
 │   │   ├── routes/
 │   │   │   ├── admin.ts          # 管理员路由
 │   │   │   ├── auth.ts           # 认证路由
-│   │   │   ├── billing.ts        # 账单路由
+│   │   │   ├── billing.ts        # 月度账单路由
+│   │   │   ├── dailyBilling.ts   # 每日账单路由（新增）
 │   │   │   ├── project.ts        # 项目路由（含 VM 同步）
 │   │   │   └── vm.ts             # 虚拟机路由
 │   │   └── services/
-│   │       ├── billing.ts        # 账单服务
+│   │       ├── billing.ts        # 月度账单服务
+│   │       ├── dailyBilling.ts   # 每日账单服务（新增）
 │   │       ├── email.ts          # 邮件服务
 │   │       └── vsphere.ts        # vSphere API 集成（核心）
 │   ├── Dockerfile
@@ -40,9 +42,13 @@ VMware tenant/
 │   │   ├── App.tsx               # 主应用组件
 │   │   ├── AuthContext.tsx       # 认证上下文
 │   │   ├── api.ts                # API 客户端
-│   │   └── pages/                # 页面组件
+│   │   └── pages/
+│   │       ├── DailyBilling.tsx  # 每日账单页面（新增）
+│   │       └── ...               # 其他页面
 │   ├── Dockerfile
 │   └── nginx.conf
+├── migrations/
+│   └── 001_daily_billing.sql     # 每日账单迁移脚本（新增）
 ├── docker-compose.yml
 ├── init.sql                      # 数据库初始化
 └── .env.example                  # 环境变量模板
@@ -66,7 +72,18 @@ VMware tenant/
 - 兼容不支持 REST API 过滤的 vCenter 版本（使用 SOAP API 回退）
 - 同步 GPU 数量与型号（解析 PCI 直通设备，必要时匹配 Host PCI 设备名称）
 
-### 4. 计费系统（已完善）
+### 4. 计费系统
+
+#### 4.1 每日账单（新增）
+- **按天计费**：每天00:05自动生成当日账单
+- **计费起点**：VM绑定到项目时开始计费（记录 `bound_at`）
+- **计费截止**：VM移出项目时停止计费（记录 `unbound_at`）
+- **不足一天按一天计算**（向上取整）
+- **单价可配置**：`pricing_config` 表中 `daily` 类型
+- **数据留存**：最长保留3个月，每月1号02:00自动清理
+- **Excel导出**：支持按天/按月/最近三月导出
+
+#### 4.2 月度账单（原有）
 - 资源使用记录（CPU/内存/存储/GPU 数量/GPU 类型）
 - 每小时自动记录使用量（cron job）
 - 每天 23:30 自动同步 VM 配置
@@ -74,7 +91,14 @@ VMware tenant/
 - 按资源类型定价
 - 月度账单生成
 - 使用明细查询
-- 手动刷新账单数据
+
+#### 4.3 定时任务
+| 时间 | 任务 | 说明 |
+|------|------|------|
+| 每小时整点 | `recordUsage()` | 记录资源使用量 |
+| 每天 00:05 | `generateDailyBills()` | 生成每日账单 |
+| 每天 23:30 | `syncVMConfigs()` | 同步 VM 配置 |
+| 每月1号 02:00 | `cleanupOldBills()` | 清理3个月前的账单 |
 
 ## vSphere 集成说明
 
@@ -112,28 +136,53 @@ VMware tenant/
 |------|------|
 | `users` | 用户表 |
 | `projects` | 项目表（关联 vCenter Folder） |
-| `virtual_machines` | 虚拟机表 |
-| `pricing_config` | 资源价格配置 |
-| `usage_records` | 资源使用记录 |
-| `bills` | 账单表 |
+| `virtual_machines` | 虚拟机表（含 `bound_at`/`unbound_at` 绑定时间） |
+| `pricing_config` | 资源价格配置（含 `daily` 每日单价） |
+| `usage_records` | 资源使用记录（月度账单用） |
+| `bills` | 月度账单表 |
+| `daily_bills` | 每日账单表（新增） |
 
 ## API 路由
 
+### 认证与用户
 | 路由 | 说明 |
 |------|------|
 | `POST /api/auth/register` | 用户注册 |
 | `POST /api/auth/login` | 用户登录 |
+
+### 项目与虚拟机
+| 路由 | 说明 |
+|------|------|
 | `GET /api/projects` | 获取项目列表 |
 | `POST /api/projects` | 创建项目 |
 | `POST /api/projects/:id/sync` | 同步项目下的 VM |
 | `GET /api/vms` | 获取虚拟机列表 |
 | `POST /api/vms/:id/power` | VM 开关机 |
+
+### 每日账单（新增）
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/api/daily-billing/daily` | GET | 获取每日账单列表（支持日期范围、项目筛选） |
+| `/api/daily-billing/summary` | GET | 获取账单汇总统计 |
+| `/api/daily-billing/export` | GET | 导出Excel账单（type=day/month/quarter） |
+| `/api/daily-billing/generate` | POST | 手动生成今日账单 (admin) |
+| `/api/daily-billing/cleanup` | POST | 手动清理旧账单 (admin) |
+| `/api/daily-billing/pricing` | GET | 获取价格配置 |
+| `/api/daily-billing/pricing` | PUT | 更新价格配置 (admin) |
+
+### 月度账单
+| 路由 | 说明 |
+|------|------|
 | `GET /api/billing/bills` | 获取账单列表 |
 | `GET /api/billing/bills/:id` | 获取账单详情 |
 | `GET /api/billing/bills/:id/export` | 导出账单 CSV |
 | `GET /api/billing/usage` | 获取使用明细 |
 | `POST /api/billing/generate` | 生成账单 (admin) |
 | `POST /api/billing/refresh` | 刷新账单数据 (admin) |
+
+### 管理员
+| 路由 | 说明 |
+|------|------|
 | `GET /api/admin/users` | 获取用户列表 (admin) |
 | `PUT /api/admin/users/:id/verify` | 手动验证用户邮箱 (admin) |
 | `PUT /api/admin/users/:id/status` | 更新用户状态 (admin) |
