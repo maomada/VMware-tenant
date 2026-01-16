@@ -104,10 +104,14 @@ class VSphereService {
       return this.hostPciDeviceCache;
     }
 
+    const debug = process.env.VSPHERE_GPU_DEBUG === '1';
     const hostIds = await this.listHosts();
     const deviceMap = new Map<string, string>();
 
     for (const hostId of hostIds) {
+      if (debug) {
+        console.log(`[vSphere] GPU debug host=${hostId} query pci devices`);
+      }
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
   <soapenv:Body>
@@ -129,6 +133,16 @@ class VSphereService {
       const data = await this.soapRequest(xml);
       const devices = this.parseHostPciDevices(data);
       for (const device of devices) {
+        if (debug) {
+          console.log(
+            `[vSphere] GPU debug host=${hostId} pci id=${device.id} name=${device.deviceName || 'n/a'}`
+          );
+          if (device.deviceName && /geforce|tesla/i.test(device.deviceName)) {
+            console.log(
+              `[vSphere] GPU debug host=${hostId} pci candidate id=${device.id} name=${device.deviceName}`
+            );
+          }
+        }
         if (device.deviceName) {
           deviceMap.set(`${hostId}:${device.id}`, device.deviceName);
         }
@@ -201,16 +215,27 @@ class VSphereService {
       </urn:specSet>
     </urn:RetrieveProperties>
   </soapenv:Body>
-</soapenv:Envelope>`;
+    </soapenv:Envelope>`;
 
     const data = await this.soapRequest(xml);
     const debug = process.env.VSPHERE_GPU_DEBUG === '1';
+    if (debug) {
+      console.log(`[vSphere] GPU debug vm=${vmId} config.hardware.device xml:\n${data}`);
+    }
     const hostMatch = data.match(/<name>runtime\.host<\/name>\s*<val[^>]*>([^<]+)<\/val>/);
     const hostRef = hostMatch ? this.decodeXml(hostMatch[1]) : null;
+    if (debug) {
+      console.log(`[vSphere] GPU debug vm=${vmId} runtime.host=${hostRef || 'n/a'}`);
+    }
 
     const passthroughDevices = this.extractPassthroughDevices(data);
     const gpuCount = passthroughDevices.length;
     if (debug) {
+      for (const device of passthroughDevices) {
+        console.log(
+          `[vSphere] GPU debug vm=${vmId} passthrough backing.id=${device.id || 'n/a'} name=${device.deviceName || 'n/a'}`
+        );
+      }
       console.log(`[vSphere] GPU debug vm=${vmId} host=${hostRef || 'n/a'} passthrough=${gpuCount}`);
     }
     if (!gpuCount) {
@@ -223,6 +248,11 @@ class VSphereService {
     if (needsHostMap && hostRef) {
       try {
         hostMap = await this.getHostPciDeviceMap();
+        if (debug && hostMap) {
+          console.log(
+            `[vSphere] GPU debug vm=${vmId} hostMap keys=${Array.from(hostMap.keys()).join(', ') || 'none'}`
+          );
+        }
       } catch (err) {
         console.warn('[vSphere] Host PCI device query failed:', err);
       }
