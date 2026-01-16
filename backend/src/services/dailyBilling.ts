@@ -52,6 +52,30 @@ export async function generateDailyBills() {
   return created;
 }
 
+// 为单个VM生成当天账单（绑定时调用）
+export async function generateBillForVM(vmId: number) {
+  const today = new Date().toISOString().split('T')[0];
+  const unitPrice = await getUnitPrice();
+
+  const vm = await pool.query(`
+    SELECT vm.*, p.id as project_id
+    FROM virtual_machines vm
+    JOIN projects p ON vm.project_id = p.id
+    WHERE vm.id = $1 AND vm.project_id IS NOT NULL
+  `, [vmId]);
+
+  if (vm.rows.length === 0) return false;
+
+  const v = vm.rows[0];
+  await pool.query(`
+    INSERT INTO daily_bills (project_id, vm_id, bill_date, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, unit_price, daily_cost)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    ON CONFLICT (vm_id, bill_date) DO NOTHING
+  `, [v.project_id, v.id, today, v.cpu_cores, v.memory_gb, v.storage_gb, v.gpu_count, v.gpu_type, unitPrice, unitPrice]);
+
+  return true;
+}
+
 // 清理超过3个月的账单数据
 export async function cleanupOldBills() {
   const threeMonthsAgo = new Date();
@@ -98,19 +122,22 @@ export async function syncVMConfigsWithBinding() {
             WHERE vcenter_vm_id=$8
           `, [newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb, newConfig.gpu_count, newConfig.gpu_type, newConfig.status, vm.vm]);
 
-          // 如果之前没有绑定项目，现在绑定了，记录绑定时间
+          // 如果之前没有绑定项目，现在绑定了，记录绑定时间并生成账单
           if (existing.rows[0].project_id !== project.id) {
             await pool.query(
               'UPDATE virtual_machines SET project_id = $1, bound_at = $2, unbound_at = NULL WHERE vcenter_vm_id = $3',
               [project.id, now, vm.vm]
             );
+            await generateBillForVM(existing.rows[0].id);
           }
         } else {
-          // 新VM，记录绑定时间
-          await pool.query(`
+          // 新VM，记录绑定时间并生成账单
+          const inserted = await pool.query(`
             INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status, bound_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id
           `, [project.id, vm.vm, newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb, newConfig.gpu_count, newConfig.gpu_type, newConfig.status, now]);
+          await generateBillForVM(inserted.rows[0].id);
         }
       }
 
