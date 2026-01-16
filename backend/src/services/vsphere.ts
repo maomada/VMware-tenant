@@ -208,6 +208,11 @@ class VSphereService {
     const deduped: { id: string | null; deviceName: string | null }[] = [];
     const seen = new Set<string>();
     for (const device of devices) {
+      // Don't dedupe pci-passthrough markers - each represents a separate GPU
+      if (device.id === 'pci-passthrough') {
+        deduped.push(device);
+        continue;
+      }
       const key = `${device.id || ''}:${device.deviceName || ''}`;
       if (device.id || device.deviceName) {
         if (seen.has(key)) continue;
