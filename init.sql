@@ -36,13 +36,15 @@ CREATE TABLE virtual_machines (
     gpu_count INTEGER DEFAULT 0,
     gpu_type VARCHAR(100),
     status VARCHAR(20) DEFAULT 'unknown',
+    bound_at TIMESTAMP,
+    unbound_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 资源价格配置表
 CREATE TABLE pricing_config (
     id SERIAL PRIMARY KEY,
-    resource_type VARCHAR(20) NOT NULL,
+    resource_type VARCHAR(20) NOT NULL UNIQUE,
     unit_price DECIMAL(10,4) NOT NULL,
     effective_from TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -81,8 +83,31 @@ INSERT INTO pricing_config (resource_type, unit_price) VALUES
 ('cpu', 0.05),
 ('memory', 0.01),
 ('storage', 0.001),
-('gpu', 0.50);
+('gpu', 0.50),
+('daily', 1.00)
+ON CONFLICT (resource_type) DO NOTHING;
+
+-- 每日账单表
+CREATE TABLE IF NOT EXISTS daily_bills (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    vm_id INTEGER REFERENCES virtual_machines(id) ON DELETE CASCADE,
+    bill_date DATE NOT NULL,
+    cpu_cores INTEGER NOT NULL DEFAULT 0,
+    memory_gb INTEGER NOT NULL DEFAULT 0,
+    storage_gb INTEGER NOT NULL DEFAULT 0,
+    gpu_count INTEGER NOT NULL DEFAULT 0,
+    gpu_type VARCHAR(100),
+    unit_price DECIMAL(10,2) DEFAULT 1.00,
+    daily_cost DECIMAL(12,2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(vm_id, bill_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_bills_date ON daily_bills(bill_date);
+CREATE INDEX IF NOT EXISTS idx_daily_bills_project ON daily_bills(project_id);
 
 -- 创建默认管理员 (密码: admin123, 邮箱: admin@leinao.ai)
 INSERT INTO users (username, email, password_hash, role, email_verified, status) VALUES
-('admin', 'admin@leinao.ai', '$2b$10$rB5NaTlxfHbxRN152ivoEegVw3uVKfC4sbF6Dy9PNAbdeRAgp2m.O', 'admin', TRUE, 'active');
+('admin', 'admin@leinao.ai', '$2b$10$rB5NaTlxfHbxRN152ivoEegVw3uVKfC4sbF6Dy9PNAbdeRAgp2m.O', 'admin', TRUE, 'active')
+ON CONFLICT (email) DO NOTHING;

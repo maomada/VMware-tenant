@@ -47,6 +47,22 @@ export const billing = {
   exportBill: (id: number) => `/api/billing/bills/${id}/export`
 };
 
+export const dailyBilling = {
+  list: (params?: { startDate?: string; endDate?: string; projectId?: number }) =>
+    api.get('/daily-billing/daily', { params }),
+  summary: (params?: { startDate?: string; endDate?: string; projectId?: number }) =>
+    api.get('/daily-billing/summary', { params }),
+  exportUrl: (type: 'day' | 'month' | 'quarter', params?: { startDate?: string; endDate?: string; projectId?: number }) => {
+    const query = new URLSearchParams({ type, ...params } as any).toString();
+    return `/api/daily-billing/export?${query}`;
+  },
+  generate: () => api.post('/daily-billing/generate'),
+  cleanup: () => api.post('/daily-billing/cleanup'),
+  pricing: () => api.get('/daily-billing/pricing'),
+  updatePricing: (resourceType: string, unitPrice: number) =>
+    api.put('/daily-billing/pricing', { resourceType, unitPrice })
+};
+
 export const admin = {
   users: () => api.get('/admin/users'),
   updatePassword: (id: number, password: string) => api.put(`/admin/users/${id}/password`, { password }),
