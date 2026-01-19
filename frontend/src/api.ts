@@ -41,12 +41,6 @@ export const vms = {
   powerOff: (id: number) => api.post(`/vms/${id}/power-off`)
 };
 
-export const billing = {
-  bills: () => api.get('/billing/bills'),
-  bill: (id: number) => api.get(`/billing/bills/${id}`),
-  exportBill: (id: number) => `/api/billing/bills/${id}/export`
-};
-
 export const dailyBilling = {
   list: (params?: { startDate?: string; endDate?: string; projectId?: number }) =>
     api.get('/daily-billing/daily', { params }),

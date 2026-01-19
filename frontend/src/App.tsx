@@ -7,7 +7,6 @@ import Register from './pages/Register';
 import VerifyEmail from './pages/VerifyEmail';
 import Projects from './pages/Projects';
 import VMs from './pages/VMs';
-import Billing from './pages/Billing';
 import DailyBilling from './pages/DailyBilling';
 import AdminUsers from './pages/admin/Users';
 import AdminPricing from './pages/admin/Pricing';
@@ -36,8 +35,7 @@ function UserLayout() {
   const menuItems = [
     { key: 'projects', icon: <FolderOutlined />, label: <Link to="/projects">项目</Link> },
     { key: 'vms', icon: <DesktopOutlined />, label: <Link to="/vms">虚拟机</Link> },
-    { key: 'daily-billing', icon: <DollarOutlined />, label: <Link to="/daily-billing">每日账单</Link> },
-    { key: 'billing', icon: <DollarOutlined />, label: <Link to="/billing">月度账单</Link> },
+    { key: 'billing', icon: <DollarOutlined />, label: <Link to="/billing">账单</Link> },
     ...(user?.role === 'admin' ? [{ key: 'admin', icon: <SettingOutlined />, label: <Link to="/admin">管理后台</Link> }] : [])
   ];
 
@@ -102,8 +100,7 @@ export default function App() {
             <Route index element={<Navigate to="/projects" />} />
             <Route path="projects" element={<Projects />} />
             <Route path="vms" element={<VMs />} />
-            <Route path="daily-billing" element={<DailyBilling />} />
-            <Route path="billing" element={<Billing />} />
+            <Route path="billing" element={<DailyBilling />} />
           </Route>
           <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
             <Route index element={<Navigate to="/admin/users" />} />
