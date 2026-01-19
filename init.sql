@@ -80,11 +80,11 @@ CREATE TABLE bills (
 
 -- 初始化默认价格
 INSERT INTO pricing_config (resource_type, unit_price) VALUES
-('cpu', 0.05),
-('memory', 0.01),
-('storage', 0.001),
-('gpu', 0.50),
-('daily', 1.00)
+('cpu', 0.08),
+('memory', 0.16),
+('storage', 0.50),
+('gpu_3090', 11.00),
+('gpu_t4', 5.00)
 ON CONFLICT (resource_type) DO NOTHING;
 
 -- 每日账单表

@@ -38,11 +38,11 @@ export default function AdminPricing() {
   };
 
   const resourceNames: Record<string, string> = {
-    daily: '每日账单 (每台VM/天)',
-    cpu: 'CPU (每核/小时) - 月账单',
-    memory: '内存 (每GB/小时) - 月账单',
-    storage: '存储 (每GB/小时) - 月账单',
-    gpu: 'GPU (每个/小时) - 月账单'
+    cpu: 'CPU (每核/天)',
+    memory: '内存 (每GB/天)',
+    storage: '存储 (每100GB/天)',
+    gpu_3090: '显卡 3090 (每张/天)',
+    gpu_t4: '显卡 T4 (每张/天)'
   };
 
   const columns = [

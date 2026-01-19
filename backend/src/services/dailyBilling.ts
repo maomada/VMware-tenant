@@ -1,18 +1,44 @@
 import { pool } from '../db';
 import { vsphere } from './vsphere';
 
-// 获取价格配置
-async function getUnitPrice(): Promise<number> {
-  const result = await pool.query(
-    "SELECT unit_price FROM pricing_config WHERE resource_type = 'daily' LIMIT 1"
-  );
-  return result.rows[0]?.unit_price || 1.0;
+// 获取所有价格配置
+async function getPricingConfig(): Promise<Record<string, number>> {
+  const result = await pool.query('SELECT resource_type, unit_price FROM pricing_config');
+  const config: Record<string, number> = {};
+  for (const row of result.rows) {
+    config[row.resource_type] = parseFloat(row.unit_price);
+  }
+  return config;
+}
+
+// 计算VM每日费用
+function calculateDailyCost(
+  vm: { cpu_cores: number; memory_gb: number; storage_gb: number; gpu_count: number; gpu_type?: string },
+  pricing: Record<string, number>
+): number {
+  const cpuCost = vm.cpu_cores * (pricing.cpu || 0.08);
+  const memoryCost = vm.memory_gb * (pricing.memory || 0.16);
+  const storageCost = (vm.storage_gb / 100) * (pricing.storage || 0.5);
+
+  let gpuCost = 0;
+  if (vm.gpu_count > 0 && vm.gpu_type) {
+    const gpuTypeLower = vm.gpu_type.toLowerCase();
+    if (gpuTypeLower.includes('3090')) {
+      gpuCost = vm.gpu_count * (pricing.gpu_3090 || 11);
+    } else if (gpuTypeLower.includes('t4')) {
+      gpuCost = vm.gpu_count * (pricing.gpu_t4 || 5);
+    } else {
+      gpuCost = vm.gpu_count * (pricing.gpu || 5);
+    }
+  }
+
+  return Math.round((cpuCost + memoryCost + storageCost + gpuCost) * 100) / 100;
 }
 
 // 生成每日账单（每天调用一次）
 export async function generateDailyBills() {
   const today = new Date().toISOString().split('T')[0];
-  const unitPrice = await getUnitPrice();
+  const pricing = await getPricingConfig();
 
   // 获取所有绑定到项目的VM
   const vms = await pool.query(`
@@ -32,8 +58,7 @@ export async function generateDailyBills() {
     );
     if (existing.rows.length > 0) continue;
 
-    // 计算当日费用（可根据资源配置调整）
-    const dailyCost = unitPrice;
+    const dailyCost = calculateDailyCost(vm, pricing);
 
     await pool.query(`
       INSERT INTO daily_bills (project_id, vm_id, bill_date, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, unit_price, daily_cost)
@@ -43,7 +68,7 @@ export async function generateDailyBills() {
       vm.project_id, vm.id, today,
       vm.cpu_cores, vm.memory_gb, vm.storage_gb,
       vm.gpu_count, vm.gpu_type,
-      unitPrice, dailyCost
+      dailyCost, dailyCost
     ]);
     created++;
   }
@@ -55,7 +80,7 @@ export async function generateDailyBills() {
 // 为单个VM生成当天账单（绑定时调用）
 export async function generateBillForVM(vmId: number) {
   const today = new Date().toISOString().split('T')[0];
-  const unitPrice = await getUnitPrice();
+  const pricing = await getPricingConfig();
 
   const vm = await pool.query(`
     SELECT vm.*, p.id as project_id
@@ -67,11 +92,12 @@ export async function generateBillForVM(vmId: number) {
   if (vm.rows.length === 0) return false;
 
   const v = vm.rows[0];
+  const dailyCost = calculateDailyCost(v, pricing);
   await pool.query(`
     INSERT INTO daily_bills (project_id, vm_id, bill_date, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, unit_price, daily_cost)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     ON CONFLICT (vm_id, bill_date) DO NOTHING
-  `, [v.project_id, v.id, today, v.cpu_cores, v.memory_gb, v.storage_gb, v.gpu_count, v.gpu_type, unitPrice, unitPrice]);
+  `, [v.project_id, v.id, today, v.cpu_cores, v.memory_gb, v.storage_gb, v.gpu_count, v.gpu_type, dailyCost, dailyCost]);
 
   return true;
 }
