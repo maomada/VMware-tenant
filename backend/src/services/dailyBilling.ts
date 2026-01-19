@@ -119,12 +119,29 @@ export async function cleanupOldBills() {
 
 // 同步VM配置并记录绑定时间
 export async function syncVMConfigsWithBinding() {
-  const projects = await pool.query('SELECT * FROM projects WHERE vcenter_folder_id IS NOT NULL');
+  const projects = await pool.query('SELECT * FROM projects WHERE vcenter_folder_path IS NOT NULL');
   const now = new Date();
 
   for (const project of projects.rows) {
     try {
-      const vcenterVMs = await vsphere.getVMsByFolder(project.vcenter_folder_id);
+      let folderId = project.vcenter_folder_id;
+      if (!folderId) {
+        const trimmedPath = (project.vcenter_folder_path || '').replace(/\/+$/, '');
+        const folderName = trimmedPath.split('/').pop();
+        if (folderName) {
+          folderId = await vsphere.getFolderByName(folderName);
+          if (folderId) {
+            await pool.query('UPDATE projects SET vcenter_folder_id = $1 WHERE id = $2', [folderId, project.id]);
+          }
+        }
+      }
+
+      if (!folderId) {
+        console.warn(`[DailyBilling] Skip project ${project.name} (missing vcenter_folder_id)`);
+        continue;
+      }
+
+      const vcenterVMs = await vsphere.getVMsByFolder(folderId);
 
       for (const vm of vcenterVMs) {
         const details = await vsphere.getVM(vm.vm);
