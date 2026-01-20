@@ -44,6 +44,16 @@ cron.schedule('0 * * * *', async () => {
   }
 });
 
+// Every 10 minutes sync VM configs with binding
+cron.schedule('*/10 * * * *', async () => {
+  try {
+    console.log('[Cron] Periodic VM sync...');
+    await syncVMConfigsWithBinding();
+  } catch (err) {
+    console.error('[Cron] periodic VM sync error:', err);
+  }
+});
+
 // 每天 00:05 生成每日账单
 cron.schedule('5 0 * * *', async () => {
   try {

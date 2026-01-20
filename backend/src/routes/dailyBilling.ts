@@ -82,10 +82,10 @@ router.get('/export', auth, async (req: AuthRequest, res: Response) => {
       break;
     case 'quarter':
     default:
-      const threeMonthsAgo = new Date();
-      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-      start = startDate as string || threeMonthsAgo.toISOString().split('T')[0];
-      end = endDate as string || today.toISOString().split('T')[0];
+      const quarterDate = startDate ? new Date(startDate as string) : today;
+      const quarter = Math.floor(quarterDate.getMonth() / 3);
+      start = new Date(quarterDate.getFullYear(), quarter * 3, 1).toISOString().split('T')[0];
+      end = new Date(quarterDate.getFullYear(), quarter * 3 + 3, 0).toISOString().split('T')[0];
   }
 
   const bills = await getDailyBills({

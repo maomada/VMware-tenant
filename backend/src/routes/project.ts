@@ -5,6 +5,61 @@ import { vsphere } from '../services/vsphere';
 
 const router = Router();
 
+async function syncProjectVMs(
+  project: any,
+  options: { requireFolderId?: boolean } = {}
+) {
+  let folderId = project.vcenter_folder_id;
+  console.log(`[Sync] Project: ${project.name}, FolderId: ${folderId}, Path: ${project.vcenter_folder_path}`);
+
+  if (!folderId) {
+    const trimmedPath = (project.vcenter_folder_path || '').replace(/\/+$/, '');
+    const folderName = trimmedPath.split('/').pop();
+    if (folderName) {
+      console.log(`[Sync] Looking up folder: ${folderName}`);
+      folderId = await vsphere.getFolderByName(folderName);
+    }
+    if (!folderId) {
+      if (options.requireFolderId) {
+        throw new Error('Folder not found in vCenter');
+      }
+      return { synced: 0, vms: [], didSync: false };
+    }
+    await pool.query('UPDATE projects SET vcenter_folder_id = $1 WHERE id = $2', [folderId, project.id]);
+  }
+
+  console.log(`[Sync] Getting VMs from folder: ${folderId}`);
+  const vcenterVMs = await vsphere.getVMsByFolder(folderId);
+  console.log(`[Sync] Found ${vcenterVMs.length} VMs`);
+  let synced = 0;
+
+  for (const vm of vcenterVMs) {
+    const details = await vsphere.getVM(vm.vm);
+    const gpuInfo = await vsphere.getVmGpuInfo(vm.vm);
+    await pool.query(
+      `INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (vcenter_vm_id) DO UPDATE SET
+         project_id = $1, name = $3, cpu_cores = $4, memory_gb = $5, storage_gb = $6, gpu_count = $7, gpu_type = $8, status = $9`,
+      [
+        project.id,
+        vm.vm,
+        vm.name,
+        details.cpu?.count || 1,
+        Math.ceil((details.memory?.size_MiB || 1024) / 1024),
+        Math.ceil((details.disks ? Object.values(details.disks).reduce((sum: number, d: any) => sum + (d.capacity || 0), 0) : 0) / 1024 / 1024 / 1024),
+        gpuInfo.gpuCount,
+        gpuInfo.gpuType,
+        vm.power_state || 'unknown'
+      ]
+    );
+    synced++;
+  }
+
+  const vms = await pool.query('SELECT * FROM virtual_machines WHERE project_id = $1', [project.id]);
+  return { synced, vms: vms.rows, didSync: true };
+}
+
 router.get('/', auth, async (req: AuthRequest, res) => {
   const result = await pool.query(
     'SELECT * FROM projects WHERE user_id = $1 ORDER BY id',
@@ -29,7 +84,19 @@ router.post('/', auth, async (req: AuthRequest, res) => {
      VALUES ($1, $2, $3, $4) RETURNING *`,
     [req.user?.id, name, vcenterFolderPath, folderId]
   );
-  res.json(result.rows[0]);
+  const project = result.rows[0];
+  let vmCount = 0;
+  let firstSyncDone = false;
+
+  try {
+    const syncResult = await syncProjectVMs(project);
+    vmCount = syncResult.vms.length;
+    firstSyncDone = syncResult.didSync;
+  } catch (err) {
+    console.warn(`[Sync] Initial sync failed for project ${project.id}:`, err);
+  }
+
+  res.json({ ...project, vmCount, firstSyncDone });
 });
 
 router.get('/:id', auth, async (req: AuthRequest, res) => {
@@ -55,47 +122,16 @@ router.post('/:id/sync', auth, async (req: AuthRequest, res) => {
   if (!project.rows[0]) return res.status(404).json({ error: 'Not found' });
 
   const p = project.rows[0];
-  let folderId = p.vcenter_folder_id;
-  console.log(`[Sync] Project: ${p.name}, FolderId: ${folderId}, Path: ${p.vcenter_folder_path}`);
 
-  if (!folderId) {
-    const folderName = p.vcenter_folder_path.split('/').pop();
-    console.log(`[Sync] Looking up folder: ${folderName}`);
-    folderId = await vsphere.getFolderByName(folderName);
-    if (!folderId) return res.status(400).json({ error: 'Folder not found in vCenter' });
-    await pool.query('UPDATE projects SET vcenter_folder_id = $1 WHERE id = $2', [folderId, p.id]);
+  try {
+    const { synced, vms } = await syncProjectVMs(p, { requireFolderId: true });
+    res.json({ synced, vms });
+  } catch (err: any) {
+    if (err instanceof Error && err.message === 'Folder not found in vCenter') {
+      return res.status(400).json({ error: err.message });
+    }
+    throw err;
   }
-
-  console.log(`[Sync] Getting VMs from folder: ${folderId}`);
-  const vcenterVMs = await vsphere.getVMsByFolder(folderId);
-  console.log(`[Sync] Found ${vcenterVMs.length} VMs`);
-  let synced = 0;
-
-  for (const vm of vcenterVMs) {
-    const details = await vsphere.getVM(vm.vm);
-    const gpuInfo = await vsphere.getVmGpuInfo(vm.vm);
-    await pool.query(
-      `INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (vcenter_vm_id) DO UPDATE SET
-         project_id = $1, name = $3, cpu_cores = $4, memory_gb = $5, storage_gb = $6, gpu_count = $7, gpu_type = $8, status = $9`,
-      [
-        p.id,
-        vm.vm,
-        vm.name,
-        details.cpu?.count || 1,
-        Math.ceil((details.memory?.size_MiB || 1024) / 1024),
-        Math.ceil((details.disks ? Object.values(details.disks).reduce((sum: number, d: any) => sum + (d.capacity || 0), 0) : 0) / 1024 / 1024 / 1024),
-        gpuInfo.gpuCount,
-        gpuInfo.gpuType,
-        vm.power_state || 'unknown'
-      ]
-    );
-    synced++;
-  }
-
-  const vms = await pool.query('SELECT * FROM virtual_machines WHERE project_id = $1', [p.id]);
-  res.json({ synced, vms: vms.rows });
 });
 
 export default router;

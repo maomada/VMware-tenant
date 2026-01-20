@@ -161,7 +161,7 @@ export default function DailyBilling() {
           <Button type="primary" onClick={handleQuery} icon={<ReloadOutlined />}>查询</Button>
           <Button onClick={() => handleExport('day')} icon={<DownloadOutlined />}>按天导出</Button>
           <Button onClick={() => handleExport('month')} icon={<DownloadOutlined />}>按月导出</Button>
-          <Button onClick={() => handleExport('quarter')} icon={<DownloadOutlined />}>最近三月</Button>
+          <Button onClick={() => handleExport('quarter')} icon={<DownloadOutlined />}>按季度</Button>
           {isAdmin && (
             <Button type="dashed" onClick={handleGenerate}>生成今日账单</Button>
           )}
@@ -216,7 +216,7 @@ export default function DailyBilling() {
                     >
                       <Select.Option value="day">按日</Select.Option>
                       <Select.Option value="month">按月</Select.Option>
-                      <Select.Option value="quarter">按三个月</Select.Option>
+                      <Select.Option value="quarter">按季度</Select.Option>
                     </Select>
                     <Button onClick={() => loadStats()} icon={<ReloadOutlined />}>刷新统计</Button>
                   </Space>
