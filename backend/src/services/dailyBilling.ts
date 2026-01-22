@@ -11,11 +11,19 @@ async function getPricingConfig(): Promise<Record<string, number>> {
   return config;
 }
 
-// 计算VM每日费用
+// 计算VM每日费用，返回费用明细
+interface CostBreakdown {
+  cpuCost: number;
+  memoryCost: number;
+  storageCost: number;
+  gpuCost: number;
+  totalCost: number;
+}
+
 function calculateDailyCost(
   vm: { cpu_cores: number; memory_gb: number; storage_gb: number; gpu_count: number; gpu_type?: string },
   pricing: Record<string, number>
-): number {
+): CostBreakdown {
   const cpuCost = vm.cpu_cores * (pricing.cpu || 0.08);
   const memoryCost = vm.memory_gb * (pricing.memory || 0.16);
   const storageCost = (vm.storage_gb / 100) * (pricing.storage || 0.5);
@@ -32,7 +40,8 @@ function calculateDailyCost(
     }
   }
 
-  return Math.round((cpuCost + memoryCost + storageCost + gpuCost) * 100) / 100;
+  const totalCost = Math.round((cpuCost + memoryCost + storageCost + gpuCost) * 100) / 100;
+  return { cpuCost, memoryCost, storageCost, gpuCost, totalCost };
 }
 
 // 生成每日账单（每天调用一次）
@@ -58,7 +67,9 @@ export async function generateDailyBills() {
     );
     if (existing.rows.length > 0) continue;
 
-    const dailyCost = calculateDailyCost(vm, pricing);
+    const cost = calculateDailyCost(vm, pricing);
+    // unit_price = sum of resource units (cpu + memory + storage/100 + gpu), daily_cost = actual cost
+    const resourceUnits = vm.cpu_cores + vm.memory_gb + (vm.storage_gb / 100) + vm.gpu_count;
 
     await pool.query(`
       INSERT INTO daily_bills (project_id, vm_id, bill_date, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, unit_price, daily_cost)
@@ -68,7 +79,7 @@ export async function generateDailyBills() {
       vm.project_id, vm.id, today,
       vm.cpu_cores, vm.memory_gb, vm.storage_gb,
       vm.gpu_count, vm.gpu_type,
-      dailyCost, dailyCost
+      Math.round(resourceUnits * 100) / 100, cost.totalCost
     ]);
     created++;
   }
@@ -92,12 +103,13 @@ export async function generateBillForVM(vmId: number) {
   if (vm.rows.length === 0) return false;
 
   const v = vm.rows[0];
-  const dailyCost = calculateDailyCost(v, pricing);
+  const cost = calculateDailyCost(v, pricing);
+  const resourceUnits = v.cpu_cores + v.memory_gb + (v.storage_gb / 100) + v.gpu_count;
   await pool.query(`
     INSERT INTO daily_bills (project_id, vm_id, bill_date, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, unit_price, daily_cost)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     ON CONFLICT (vm_id, bill_date) DO NOTHING
-  `, [v.project_id, v.id, today, v.cpu_cores, v.memory_gb, v.storage_gb, v.gpu_count, v.gpu_type, dailyCost, dailyCost]);
+  `, [v.project_id, v.id, today, v.cpu_cores, v.memory_gb, v.storage_gb, v.gpu_count, v.gpu_type, Math.round(resourceUnits * 100) / 100, cost.totalCost]);
 
   return true;
 }

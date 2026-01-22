@@ -95,7 +95,19 @@ router.get('/export', auth, async (req: AuthRequest, res: Response) => {
     userId: isAdmin ? undefined : req.user?.id
   });
 
-  // 生成Excel (使用简单的CSV格式，前端可转换)
+  // Group bills by project, then by VM
+  const projectMap = new Map<string, { projectName: string; vms: Map<string, any[]> }>();
+  for (const bill of bills) {
+    if (!projectMap.has(bill.project_name)) {
+      projectMap.set(bill.project_name, { projectName: bill.project_name, vms: new Map() });
+    }
+    const project = projectMap.get(bill.project_name)!;
+    if (!project.vms.has(bill.vm_name)) {
+      project.vms.set(bill.vm_name, []);
+    }
+    project.vms.get(bill.vm_name)!.push(bill);
+  }
+
   const ExcelJS = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('账单明细');
@@ -111,36 +123,74 @@ router.get('/export', auth, async (req: AuthRequest, res: Response) => {
     { header: '存储(GB)', key: 'storage_gb', width: 10 },
     { header: 'GPU数量', key: 'gpu_count', width: 10 },
     { header: 'GPU型号', key: 'gpu_type', width: 25 },
-    { header: '单价', key: 'unit_price', width: 10 },
-    { header: '当日费用', key: 'daily_cost', width: 12 },
-    { header: '创建时间', key: 'created_at', width: 20 }
+    { header: '资源单位', key: 'unit_price', width: 10 },
+    { header: '当日费用', key: 'daily_cost', width: 12 }
   ];
 
-  // 添加数据
-  for (const bill of bills) {
-    sheet.addRow({
-      project_name: bill.project_name,
-      vm_name: bill.vm_name,
-      vcenter_vm_id: bill.vcenter_vm_id,
-      bill_date: bill.bill_date?.toISOString?.().split('T')[0] || bill.bill_date,
-      cpu_cores: bill.cpu_cores,
-      memory_gb: bill.memory_gb,
-      storage_gb: bill.storage_gb,
-      gpu_count: bill.gpu_count,
-      gpu_type: bill.gpu_type || '-',
-      unit_price: bill.unit_price,
-      daily_cost: bill.daily_cost,
-      created_at: bill.created_at?.toISOString?.() || bill.created_at
+  // Style header row
+  sheet.getRow(1).font = { bold: true };
+
+  let grandTotal = 0;
+
+  // Add data in hierarchical structure
+  for (const [projectName, projectData] of projectMap) {
+    let projectTotal = 0;
+    let isFirstVMInProject = true;
+
+    for (const [vmName, vmBills] of projectData.vms) {
+      let vmTotal = 0;
+      let isFirstBillInVM = true;
+
+      for (const bill of vmBills) {
+        const cost = parseFloat(bill.daily_cost || 0);
+        vmTotal += cost;
+        sheet.addRow({
+          project_name: isFirstVMInProject ? projectName : '',
+          vm_name: isFirstBillInVM ? vmName : '',
+          vcenter_vm_id: isFirstBillInVM ? bill.vcenter_vm_id : '',
+          bill_date: bill.bill_date?.toISOString?.().split('T')[0] || bill.bill_date,
+          cpu_cores: bill.cpu_cores,
+          memory_gb: bill.memory_gb,
+          storage_gb: bill.storage_gb,
+          gpu_count: bill.gpu_count,
+          gpu_type: bill.gpu_type || '-',
+          unit_price: bill.unit_price,
+          daily_cost: cost
+        });
+        isFirstBillInVM = false;
+        isFirstVMInProject = false;
+      }
+
+      // VM subtotal row
+      const vmSubtotalRow = sheet.addRow({
+        project_name: '',
+        vm_name: `${vmName} 小计`,
+        daily_cost: vmTotal.toFixed(2)
+      });
+      vmSubtotalRow.font = { italic: true };
+      vmSubtotalRow.getCell('daily_cost').font = { italic: true, bold: true };
+      projectTotal += vmTotal;
+    }
+
+    // Project total row
+    const projectTotalRow = sheet.addRow({
+      project_name: `${projectName} 合计`,
+      daily_cost: projectTotal.toFixed(2)
     });
+    projectTotalRow.font = { bold: true };
+    projectTotalRow.getCell('daily_cost').font = { bold: true };
+    sheet.addRow({}); // Empty row between projects
+    grandTotal += projectTotal;
   }
 
-  // 添加汇总行
-  const totalCost = bills.reduce((sum, b) => sum + parseFloat(b.daily_cost || 0), 0);
+  // Grand total row
   sheet.addRow({});
-  sheet.addRow({
-    project_name: '合计',
-    daily_cost: totalCost.toFixed(2)
+  const grandTotalRow = sheet.addRow({
+    project_name: '总计',
+    daily_cost: grandTotal.toFixed(2)
   });
+  grandTotalRow.font = { bold: true };
+  grandTotalRow.getCell('daily_cost').font = { bold: true };
 
   // 设置响应头
   const filename = `bills_${start}_${end}.xlsx`;

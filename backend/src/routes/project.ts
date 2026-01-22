@@ -31,16 +31,24 @@ async function syncProjectVMs(
   console.log(`[Sync] Getting VMs from folder: ${folderId}`);
   const vcenterVMs = await vsphere.getVMsByFolder(folderId);
   console.log(`[Sync] Found ${vcenterVMs.length} VMs`);
+  const now = new Date();
   let synced = 0;
+  const vcenterVMIds = new Set(vcenterVMs.map((v: any) => v.vm));
 
   for (const vm of vcenterVMs) {
     const details = await vsphere.getVM(vm.vm);
     const gpuInfo = await vsphere.getVmGpuInfo(vm.vm);
+    const existing = await pool.query('SELECT project_id FROM virtual_machines WHERE vcenter_vm_id = $1', [vm.vm]);
+    const oldProjectId = existing.rows[0]?.project_id;
+    const isNewBinding = !oldProjectId || oldProjectId !== project.id;
+
     await pool.query(
-      `INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status, bound_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (vcenter_vm_id) DO UPDATE SET
-         project_id = $1, name = $3, cpu_cores = $4, memory_gb = $5, storage_gb = $6, gpu_count = $7, gpu_type = $8, status = $9`,
+         project_id = $1, name = $3, cpu_cores = $4, memory_gb = $5, storage_gb = $6, gpu_count = $7, gpu_type = $8, status = $9,
+         bound_at = CASE WHEN virtual_machines.project_id IS DISTINCT FROM $1 THEN $10 ELSE virtual_machines.bound_at END,
+         unbound_at = CASE WHEN virtual_machines.project_id IS DISTINCT FROM $1 THEN NULL ELSE virtual_machines.unbound_at END`,
       [
         project.id,
         vm.vm,
@@ -50,13 +58,26 @@ async function syncProjectVMs(
         Math.ceil((details.disks ? Object.values(details.disks).reduce((sum: number, d: any) => sum + (d.capacity || 0), 0) : 0) / 1024 / 1024 / 1024),
         gpuInfo.gpuCount,
         gpuInfo.gpuType,
-        vm.power_state || 'unknown'
+        vm.power_state || 'unknown',
+        now
       ]
     );
     synced++;
   }
 
-  const vms = await pool.query('SELECT * FROM virtual_machines WHERE project_id = $1', [project.id]);
+  // Mark VMs removed from folder as unbound
+  const dbVMs = await pool.query(
+    'SELECT id, vcenter_vm_id, name FROM virtual_machines WHERE project_id = $1 AND unbound_at IS NULL',
+    [project.id]
+  );
+  for (const dbVM of dbVMs.rows) {
+    if (!vcenterVMIds.has(dbVM.vcenter_vm_id)) {
+      await pool.query('UPDATE virtual_machines SET unbound_at = $1 WHERE id = $2', [now, dbVM.id]);
+      console.log(`[Sync] VM ${dbVM.name} unbound from project`);
+    }
+  }
+
+  const vms = await pool.query('SELECT * FROM virtual_machines WHERE project_id = $1 AND unbound_at IS NULL', [project.id]);
   return { synced, vms: vms.rows, didSync: true };
 }
 
