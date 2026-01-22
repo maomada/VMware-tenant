@@ -272,7 +272,7 @@ export async function getBillSummary(options: {
       p.name as project_name,
       vm.name as vm_name,
       vm.vcenter_vm_id,
-      COUNT(db.id) as bill_days,
+      COUNT(DISTINCT db.bill_date) as bill_days,
       SUM(db.daily_cost) as total_cost,
       MIN(db.bill_date) as first_bill_date,
       MAX(db.bill_date) as last_bill_date

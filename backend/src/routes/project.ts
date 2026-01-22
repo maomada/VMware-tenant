@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db';
 import { auth, AuthRequest } from '../middleware/auth';
 import { vsphere } from '../services/vsphere';
+import { generateBillForVM } from '../services/dailyBilling';
 
 const router = Router();
 
@@ -38,17 +39,21 @@ async function syncProjectVMs(
   for (const vm of vcenterVMs) {
     const details = await vsphere.getVM(vm.vm);
     const gpuInfo = await vsphere.getVmGpuInfo(vm.vm);
-    const existing = await pool.query('SELECT project_id FROM virtual_machines WHERE vcenter_vm_id = $1', [vm.vm]);
+    const existing = await pool.query(
+      'SELECT id, project_id FROM virtual_machines WHERE vcenter_vm_id = $1',
+      [vm.vm]
+    );
     const oldProjectId = existing.rows[0]?.project_id;
-    const isNewBinding = !oldProjectId || oldProjectId !== project.id;
+    const isNewBinding = existing.rows.length === 0 || oldProjectId !== project.id;
 
-    await pool.query(
+    const upserted = await pool.query(
       `INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status, bound_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (vcenter_vm_id) DO UPDATE SET
          project_id = $1, name = $3, cpu_cores = $4, memory_gb = $5, storage_gb = $6, gpu_count = $7, gpu_type = $8, status = $9,
          bound_at = CASE WHEN virtual_machines.project_id IS DISTINCT FROM $1 THEN $10 ELSE virtual_machines.bound_at END,
-         unbound_at = CASE WHEN virtual_machines.project_id IS DISTINCT FROM $1 THEN NULL ELSE virtual_machines.unbound_at END`,
+         unbound_at = CASE WHEN virtual_machines.project_id IS DISTINCT FROM $1 THEN NULL ELSE virtual_machines.unbound_at END
+       RETURNING id`,
       [
         project.id,
         vm.vm,
@@ -62,6 +67,12 @@ async function syncProjectVMs(
         now
       ]
     );
+    if (isNewBinding) {
+      const vmId = upserted.rows[0]?.id ?? existing.rows[0]?.id;
+      if (vmId) {
+        await generateBillForVM(vmId);
+      }
+    }
     synced++;
   }
 
