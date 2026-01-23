@@ -123,7 +123,6 @@ export default function DailyBilling() {
     { title: '存储(GB)', dataIndex: 'storage_gb', width: 100 },
     { title: 'GPU', dataIndex: 'gpu_count', width: 80 },
     { title: 'GPU型号', dataIndex: 'gpu_type', width: 150, render: (v: string) => v || '-' },
-    { title: '单价', dataIndex: 'unit_price', width: 80, render: (v: string) => `¥${v}` },
     { title: '当日费用', dataIndex: 'daily_cost', width: 100, render: (v: string) => <strong>¥{v}</strong> }
   ];
 
