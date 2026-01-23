@@ -346,7 +346,7 @@ export async function getStatsByDimension(options: {
     SELECT
       ${periodSelect} as period,
       COUNT(DISTINCT db.vm_id) as vm_count,
-      COUNT(db.id) as bill_days,
+      COUNT(DISTINCT db.bill_date) as bill_days,
       COALESCE(SUM(db.daily_cost), 0) as total_cost
     FROM daily_bills db
     JOIN projects p ON db.project_id = p.id
