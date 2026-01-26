@@ -116,16 +116,17 @@ export async function generateBillForVM(vmId: number) {
 
 // 清理超过3个月的账单数据
 export async function cleanupOldBills() {
-  const threeMonthsAgo = new Date();
-  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-  const cutoffDate = threeMonthsAgo.toISOString().split('T')[0];
+  const cutoffDate = new Date();
+  cutoffDate.setMonth(cutoffDate.getMonth() - 3);
+  cutoffDate.setDate(cutoffDate.getDate() - 7);
+  const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
 
   const result = await pool.query(
     'DELETE FROM daily_bills WHERE bill_date < $1',
-    [cutoffDate]
+    [cutoffDateStr]
   );
 
-  console.log(`[DailyBilling] Cleaned up ${result.rowCount} old bills before ${cutoffDate}`);
+  console.log(`[DailyBilling] Cleaned up ${result.rowCount} old bills before ${cutoffDateStr}`);
   return result.rowCount;
 }
 
@@ -158,6 +159,8 @@ export async function syncVMConfigsWithBinding() {
       for (const vm of vcenterVMs) {
         const details = await vsphere.getVM(vm.vm);
         const gpuInfo = await vsphere.getVmGpuInfo(vm.vm);
+        const metadata = await vsphere.getVMMetadata(vm.vm);
+        const createTimeForInsert = metadata.createTime ?? now;
         const newConfig = {
           name: vm.name,
           cpu_cores: details.cpu?.count || 1,
@@ -165,7 +168,10 @@ export async function syncVMConfigsWithBinding() {
           storage_gb: Math.ceil((details.disks ? Object.values(details.disks).reduce((sum: number, d: any) => sum + (d.capacity || 0), 0) : 0) / 1024 / 1024 / 1024),
           gpu_count: gpuInfo.gpuCount,
           gpu_type: gpuInfo.gpuType,
-          status: vm.power_state || 'unknown'
+          status: vm.power_state || 'unknown',
+          create_time: metadata.createTime,
+          end_time: metadata.deadline,
+          owner: metadata.owner
         };
 
         const existing = await pool.query('SELECT * FROM virtual_machines WHERE vcenter_vm_id = $1', [vm.vm]);
@@ -173,9 +179,18 @@ export async function syncVMConfigsWithBinding() {
         if (existing.rows[0]) {
           // 更新现有VM
           await pool.query(`
-            UPDATE virtual_machines SET name=$1, cpu_cores=$2, memory_gb=$3, storage_gb=$4, gpu_count=$5, gpu_type=$6, status=$7
-            WHERE vcenter_vm_id=$8
-          `, [newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb, newConfig.gpu_count, newConfig.gpu_type, newConfig.status, vm.vm]);
+            UPDATE virtual_machines SET
+              name=$1, cpu_cores=$2, memory_gb=$3, storage_gb=$4, gpu_count=$5, gpu_type=$6, status=$7,
+              create_time=COALESCE($8, create_time),
+              end_time=$9,
+              owner=COALESCE($10, owner)
+            WHERE vcenter_vm_id=$11
+          `, [
+            newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb,
+            newConfig.gpu_count, newConfig.gpu_type, newConfig.status,
+            newConfig.create_time, newConfig.end_time, newConfig.owner,
+            vm.vm
+          ]);
 
           // 如果之前没有绑定项目，现在绑定了，记录绑定时间并生成账单
           if (existing.rows[0].project_id !== project.id) {
@@ -188,10 +203,17 @@ export async function syncVMConfigsWithBinding() {
         } else {
           // 新VM，记录绑定时间并生成账单
           const inserted = await pool.query(`
-            INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status, bound_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO virtual_machines (
+              project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb,
+              gpu_count, gpu_type, status, bound_at, create_time, end_time, owner
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING id
-          `, [project.id, vm.vm, newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb, newConfig.gpu_count, newConfig.gpu_type, newConfig.status, now]);
+          `, [
+            project.id, vm.vm, newConfig.name, newConfig.cpu_cores, newConfig.memory_gb,
+            newConfig.storage_gb, newConfig.gpu_count, newConfig.gpu_type, newConfig.status,
+            now, createTimeForInsert, newConfig.end_time, newConfig.owner
+          ]);
           await generateBillForVM(inserted.rows[0].id);
         }
       }
@@ -227,7 +249,7 @@ export async function getDailyBills(options: {
   userId?: number;
 }) {
   let query = `
-    SELECT db.*, vm.name as vm_name, vm.vcenter_vm_id, p.name as project_name, u.username
+    SELECT db.*, vm.name as vm_name, vm.vcenter_vm_id, p.name as project_name, p.project_code, u.username
     FROM daily_bills db
     JOIN virtual_machines vm ON db.vm_id = vm.id
     JOIN projects p ON db.project_id = p.id
@@ -270,6 +292,7 @@ export async function getBillSummary(options: {
   let query = `
     SELECT
       p.name as project_name,
+      p.project_code as project_code,
       vm.name as vm_name,
       vm.vcenter_vm_id,
       COUNT(DISTINCT db.bill_date) as bill_days,
@@ -301,15 +324,15 @@ export async function getBillSummary(options: {
     params.push(options.endDate);
   }
 
-  query += ' GROUP BY p.name, vm.name, vm.vcenter_vm_id ORDER BY p.name, vm.name';
+  query += ' GROUP BY p.name, p.project_code, vm.name, vm.vcenter_vm_id ORDER BY p.name, vm.name';
 
   const result = await pool.query(query, params);
   return result.rows;
 }
 
-export type DailyBillingStatsDimension = 'day' | 'month' | 'quarter';
+export type DailyBillingStatsDimension = 'day' | 'month';
 
-// Aggregate daily bills by time bucket (day/month/quarter).
+// Aggregate daily bills by time bucket (day/month).
 export async function getStatsByDimension(options: {
   dimension: DailyBillingStatsDimension;
   projectId?: number;
@@ -331,12 +354,6 @@ export async function getStatsByDimension(options: {
       periodSelect = "to_char(date_trunc('month', db.bill_date), 'YYYY-MM')";
       groupByExpr = "date_trunc('month', db.bill_date)";
       orderByExpr = "date_trunc('month', db.bill_date)";
-      break;
-    case 'quarter':
-      periodSelect =
-        "to_char(date_trunc('quarter', db.bill_date), 'YYYY') || '-Q' || extract(quarter from db.bill_date)::int";
-      groupByExpr = "date_trunc('quarter', db.bill_date)";
-      orderByExpr = "date_trunc('quarter', db.bill_date)";
       break;
     default:
       throw new Error(`Invalid dimension: ${options.dimension}`);

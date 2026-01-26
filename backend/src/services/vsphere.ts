@@ -8,6 +8,8 @@ class VSphereService {
   private soapSessionId: string | null = null;
   private hostPciDeviceCache: Map<string, string> | null = null;
   private hostPciDeviceCacheAt = 0;
+  private customFieldCache: Map<string, string> | null = null;
+  private customFieldCacheAt = 0;
 
   constructor() {
     const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -152,6 +154,52 @@ class VSphereService {
     this.hostPciDeviceCache = deviceMap;
     this.hostPciDeviceCacheAt = now;
     return deviceMap;
+  }
+
+  private async getCustomFieldDefinitions(): Promise<Map<string, string>> {
+    const now = Date.now();
+    if (this.customFieldCache && now - this.customFieldCacheAt < 5 * 60 * 1000) {
+      return this.customFieldCache;
+    }
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:RetrieveProperties>
+      <urn:_this type="PropertyCollector">propertyCollector</urn:_this>
+      <urn:specSet>
+        <urn:propSet>
+          <urn:type>CustomFieldsManager</urn:type>
+          <urn:pathSet>field</urn:pathSet>
+        </urn:propSet>
+        <urn:objectSet>
+          <urn:obj type="CustomFieldsManager">CustomFieldsManager</urn:obj>
+        </urn:objectSet>
+      </urn:specSet>
+    </urn:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    try {
+      const data = await this.soapRequest(xml);
+      const fieldMap = new Map<string, string>();
+      const fieldRegex = /<CustomFieldDef[^>]*>([\s\S]*?)<\/CustomFieldDef>/g;
+      let match: RegExpExecArray | null;
+      while ((match = fieldRegex.exec(data)) !== null) {
+        const block = match[1];
+        const keyMatch = block.match(/<key>(\d+)<\/key>/);
+        const nameMatch = block.match(/<name>([^<]+)<\/name>/);
+        if (keyMatch && nameMatch) {
+          fieldMap.set(keyMatch[1], this.decodeXml(nameMatch[1]));
+        }
+      }
+      this.customFieldCache = fieldMap;
+      this.customFieldCacheAt = now;
+      return fieldMap;
+    } catch (err) {
+      console.warn('[vSphere] Failed to load custom field definitions:', err);
+      return new Map();
+    }
   }
 
   private extractPassthroughDevices(xml: string) {
@@ -320,6 +368,74 @@ class VSphereService {
       console.log(`[vSphere] GPU debug vm=${vmId} types=${uniqueTypes.join(', ') || 'unknown'}`);
     }
     return { gpuCount, gpuType: uniqueTypes.length ? uniqueTypes.join(', ') : null };
+  }
+
+  async getVMMetadata(vmId: string): Promise<{
+    createTime: Date | null;
+    deadline: Date | null;
+    owner: string | null;
+  }> {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:RetrieveProperties>
+      <urn:_this type="PropertyCollector">propertyCollector</urn:_this>
+      <urn:specSet>
+        <urn:propSet>
+          <urn:type>VirtualMachine</urn:type>
+          <urn:pathSet>config.createDate</urn:pathSet>
+          <urn:pathSet>customValue</urn:pathSet>
+        </urn:propSet>
+        <urn:objectSet>
+          <urn:obj type="VirtualMachine">${vmId}</urn:obj>
+        </urn:objectSet>
+      </urn:specSet>
+    </urn:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    try {
+      const data = await this.soapRequest(xml);
+
+      const createDateMatch = data.match(/<name>config\.createDate<\/name>\s*<val[^>]*>([^<]+)<\/val>/);
+      let createTime: Date | null = null;
+      if (createDateMatch) {
+        const dateStr = this.decodeXml(createDateMatch[1]);
+        const parsed = new Date(dateStr);
+        if (!isNaN(parsed.getTime()) && parsed.getFullYear() !== 1970) {
+          createTime = parsed;
+        }
+      }
+
+      const fieldMap = await this.getCustomFieldDefinitions();
+      let deadline: Date | null = null;
+      let owner: string | null = null;
+
+      const customValueSectionMatch = data.match(/<name>customValue<\/name>\s*<val[^>]*>([\s\S]*?)<\/val>/);
+      const customValueSection = customValueSectionMatch?.[1] || '';
+      const customValueRegex = /<key>(\d+)<\/key>[\s\S]*?<value[^>]*>([^<]*)<\/value>/g;
+      let match: RegExpExecArray | null;
+      while ((match = customValueRegex.exec(customValueSection)) !== null) {
+        const key = match[1];
+        const value = this.decodeXml(match[2]);
+        const fieldName = fieldMap.get(key)?.trim().toLowerCase();
+
+        if (fieldName === 'deadline' && value) {
+          const parsed = new Date(value);
+          if (!isNaN(parsed.getTime())) {
+            deadline = parsed;
+          }
+        }
+        if (fieldName === 'owner' && value) {
+          owner = value;
+        }
+      }
+
+      return { createTime, deadline, owner };
+    } catch (err) {
+      console.warn(`[vSphere] Failed to fetch metadata for VM ${vmId}:`, err);
+      return { createTime: null, deadline: null, owner: null };
+    }
   }
 
   async listVMs() {

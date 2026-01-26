@@ -32,15 +32,25 @@ export default function AdminVMs() {
     load();
   };
 
+  const formatDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : '-');
+
   const columns = [
     { title: '名称', dataIndex: 'name' },
-    { title: '项目', dataIndex: 'project_name' },
+    {
+      title: '项目',
+      dataIndex: 'project_name',
+      render: (_: any, record: any) =>
+        record.project_code ? `${record.project_name} (${record.project_code})` : record.project_name
+    },
     { title: '用户', dataIndex: 'username' },
     { title: 'CPU', dataIndex: 'cpu_cores', render: (v: number) => `${v} 核` },
     { title: '内存', dataIndex: 'memory_gb', render: (v: number) => `${v} GB` },
     { title: '存储', dataIndex: 'storage_gb', render: (v: number) => `${v} GB` },
     { title: 'GPU数量', dataIndex: 'gpu_count' },
     { title: 'GPU型号', dataIndex: 'gpu_type', render: (v: string) => v || '-' },
+    { title: '创建时间', dataIndex: 'create_time', render: (v: string) => formatDateTime(v) },
+    { title: '结束时间', dataIndex: 'end_time', render: (v: string) => formatDateTime(v) },
+    { title: '所有者', dataIndex: 'owner', render: (v: string) => v || '-' },
     { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={v === 'POWERED_ON' ? 'green' : 'red'}>{v}</Tag> },
     {
       title: '操作', render: (_: any, record: any) => (
@@ -57,7 +67,10 @@ export default function AdminVMs() {
           style={{ width: '100%' }}
           value={selectedProject}
           onChange={setSelectedProject}
-          options={projects.map(p => ({ label: p.name, value: p.id }))}
+          options={projects.map(p => ({
+            label: p.project_code ? `${p.name} (${p.project_code})` : p.name,
+            value: p.id
+          }))}
         />
       </Modal>
     </div>

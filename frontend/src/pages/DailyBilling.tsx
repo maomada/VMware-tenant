@@ -16,7 +16,7 @@ export default function DailyBilling() {
   const [selectedProject, setSelectedProject] = useState<number | undefined>();
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<'detail' | 'stats'>('detail');
-  const [statsDimension, setStatsDimension] = useState<'day' | 'month' | 'quarter'>('month');
+  const [statsDimension, setStatsDimension] = useState<'day' | 'month'>('month');
 
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -55,7 +55,7 @@ export default function DailyBilling() {
     }
   };
 
-  const loadStats = async (dimension?: 'day' | 'month' | 'quarter') => {
+  const loadStats = async (dimension?: 'day' | 'month') => {
     setStatsLoading(true);
     try {
       const params: any = { dimension: dimension || statsDimension };
@@ -80,17 +80,20 @@ export default function DailyBilling() {
     loadStats();
   };
 
-  const handleExport = (type: 'day' | 'month' | 'quarter') => {
-    const params: any = {};
-    if (dateRange) {
-      params.startDate = dateRange[0].format('YYYY-MM-DD');
-      params.endDate = dateRange[1].format('YYYY-MM-DD');
+  const handleExport = () => {
+    if (!dateRange) {
+      message.warning('请选择日期范围');
+      return;
     }
+    const params: any = {
+      startDate: dateRange[0].format('YYYY-MM-DD'),
+      endDate: dateRange[1].format('YYYY-MM-DD')
+    };
     if (selectedProject) {
       params.projectId = selectedProject;
     }
     const token = localStorage.getItem('token');
-    window.open(dailyBilling.exportUrl(type, params) + `&token=${token}`, '_blank');
+    window.open(dailyBilling.exportUrl(params) + `&token=${token}`, '_blank');
   };
 
   const handleGenerate = async () => {
@@ -112,6 +115,7 @@ export default function DailyBilling() {
 
   const columns = [
     { title: '项目名称', dataIndex: 'project_name', width: 150 },
+    { title: '项目编号', dataIndex: 'project_code', width: 140 },
     { title: '虚机名称', dataIndex: 'vm_name', width: 180 },
     { title: '虚机ID', dataIndex: 'vcenter_vm_id', width: 120 },
     {
@@ -154,13 +158,13 @@ export default function DailyBilling() {
             onChange={setSelectedProject}
           >
             {projectList.map(p => (
-              <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>
+              <Select.Option key={p.id} value={p.id}>
+                {p.project_code ? `${p.name} (${p.project_code})` : p.name}
+              </Select.Option>
             ))}
           </Select>
           <Button type="primary" onClick={handleQuery} icon={<ReloadOutlined />}>查询</Button>
-          <Button onClick={() => handleExport('day')} icon={<DownloadOutlined />}>按天导出</Button>
-          <Button onClick={() => handleExport('month')} icon={<DownloadOutlined />}>按月导出</Button>
-          <Button onClick={() => handleExport('quarter')} icon={<DownloadOutlined />}>按季度</Button>
+          <Button onClick={handleExport} icon={<DownloadOutlined />}>导出</Button>
           {isAdmin && (
             <Button type="dashed" onClick={handleGenerate}>生成今日账单</Button>
           )}
@@ -208,14 +212,13 @@ export default function DailyBilling() {
                       style={{ width: 160 }}
                       value={statsDimension}
                       onChange={(v) => {
-                        const dim = v as 'day' | 'month' | 'quarter';
+                        const dim = v as 'day' | 'month';
                         setStatsDimension(dim);
                         loadStats(dim);
                       }}
                     >
                       <Select.Option value="day">按日</Select.Option>
                       <Select.Option value="month">按月</Select.Option>
-                      <Select.Option value="quarter">按季度</Select.Option>
                     </Select>
                     <Button onClick={() => loadStats()} icon={<ReloadOutlined />}>刷新统计</Button>
                   </Space>

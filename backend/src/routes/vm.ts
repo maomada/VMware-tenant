@@ -14,15 +14,15 @@ router.get('/', auth, async (req: AuthRequest, res) => {
 
   if (isAdmin) {
     query = projectId
-      ? 'SELECT vm.*, p.name as project_name FROM virtual_machines vm LEFT JOIN projects p ON vm.project_id = p.id WHERE vm.project_id = $1 ORDER BY vm.id'
-      : 'SELECT vm.*, p.name as project_name FROM virtual_machines vm LEFT JOIN projects p ON vm.project_id = p.id ORDER BY vm.id';
+      ? 'SELECT vm.*, p.name as project_name, p.project_code FROM virtual_machines vm LEFT JOIN projects p ON vm.project_id = p.id WHERE vm.project_id = $1 ORDER BY vm.id'
+      : 'SELECT vm.*, p.name as project_name, p.project_code FROM virtual_machines vm LEFT JOIN projects p ON vm.project_id = p.id ORDER BY vm.id';
     params = projectId ? [projectId] : [];
   } else {
     query = projectId
-      ? `SELECT vm.*, p.name as project_name FROM virtual_machines vm
+      ? `SELECT vm.*, p.name as project_name, p.project_code FROM virtual_machines vm
          JOIN projects p ON vm.project_id = p.id
          WHERE p.user_id = $1 AND vm.project_id = $2 ORDER BY vm.id`
-      : `SELECT vm.*, p.name as project_name FROM virtual_machines vm
+      : `SELECT vm.*, p.name as project_name, p.project_code FROM virtual_machines vm
          JOIN projects p ON vm.project_id = p.id
          WHERE p.user_id = $1 ORDER BY vm.id`;
     params = projectId ? [req.user?.id, projectId] : [req.user?.id];

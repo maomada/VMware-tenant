@@ -47,8 +47,8 @@ router.get('/stats', auth, async (req: AuthRequest, res: Response) => {
   const isAdmin = req.user?.role === 'admin';
   const { startDate, endDate, projectId, dimension } = req.query;
 
-  if (!dimension || !['day', 'month', 'quarter'].includes(dimension as string)) {
-    return res.status(400).json({ error: 'dimension must be one of: day, month, quarter' });
+  if (!dimension || !['day', 'month'].includes(dimension as string)) {
+    return res.status(400).json({ error: 'dimension must be one of: day, month' });
   }
 
   const stats = await getStatsByDimension({
@@ -65,28 +65,14 @@ router.get('/stats', auth, async (req: AuthRequest, res: Response) => {
 // 导出Excel账单
 router.get('/export', auth, async (req: AuthRequest, res: Response) => {
   const isAdmin = req.user?.role === 'admin';
-  const { type, startDate, endDate, projectId } = req.query;
+  const { startDate, endDate, projectId } = req.query;
 
-  // 计算日期范围
-  let start: string, end: string;
-  const today = new Date();
-
-  switch (type) {
-    case 'day':
-      start = end = (startDate as string) || today.toISOString().split('T')[0];
-      break;
-    case 'month':
-      const monthDate = startDate ? new Date(startDate as string) : today;
-      start = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).toISOString().split('T')[0];
-      end = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).toISOString().split('T')[0];
-      break;
-    case 'quarter':
-    default:
-      const quarterDate = startDate ? new Date(startDate as string) : today;
-      const quarter = Math.floor(quarterDate.getMonth() / 3);
-      start = new Date(quarterDate.getFullYear(), quarter * 3, 1).toISOString().split('T')[0];
-      end = new Date(quarterDate.getFullYear(), quarter * 3 + 3, 0).toISOString().split('T')[0];
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required' });
   }
+
+  const start = startDate as string;
+  const end = endDate as string;
 
   const bills = await getDailyBills({
     projectId: projectId ? parseInt(projectId as string) : undefined,
@@ -96,12 +82,17 @@ router.get('/export', auth, async (req: AuthRequest, res: Response) => {
   });
 
   // Group bills by project, then by VM
-  const projectMap = new Map<string, { projectName: string; vms: Map<string, any[]> }>();
+  const projectMap = new Map<number, { projectName: string; projectCode: string | null; vms: Map<string, any[]> }>();
   for (const bill of bills) {
-    if (!projectMap.has(bill.project_name)) {
-      projectMap.set(bill.project_name, { projectName: bill.project_name, vms: new Map() });
+    const projectKey = bill.project_id;
+    if (!projectMap.has(projectKey)) {
+      projectMap.set(projectKey, {
+        projectName: bill.project_name,
+        projectCode: bill.project_code || null,
+        vms: new Map()
+      });
     }
-    const project = projectMap.get(bill.project_name)!;
+    const project = projectMap.get(projectKey)!;
     if (!project.vms.has(bill.vm_name)) {
       project.vms.set(bill.vm_name, []);
     }
@@ -115,6 +106,7 @@ router.get('/export', auth, async (req: AuthRequest, res: Response) => {
   // 设置表头
   sheet.columns = [
     { header: '项目名称', key: 'project_name', width: 20 },
+    { header: '项目编号', key: 'project_code', width: 16 },
     { header: '虚机名称', key: 'vm_name', width: 25 },
     { header: '虚机ID', key: 'vcenter_vm_id', width: 15 },
     { header: '计费日期', key: 'bill_date', width: 12 },
@@ -133,7 +125,7 @@ router.get('/export', auth, async (req: AuthRequest, res: Response) => {
   let grandTotal = 0;
 
   // Add data in hierarchical structure
-  for (const [projectName, projectData] of projectMap) {
+  for (const [, projectData] of projectMap) {
     let projectTotal = 0;
     let isFirstVMInProject = true;
 
@@ -145,7 +137,8 @@ router.get('/export', auth, async (req: AuthRequest, res: Response) => {
         const cost = parseFloat(bill.daily_cost || 0);
         vmTotal += cost;
         sheet.addRow({
-          project_name: isFirstVMInProject ? projectName : '',
+          project_name: isFirstVMInProject ? projectData.projectName : '',
+          project_code: isFirstVMInProject ? projectData.projectCode || '' : '',
           vm_name: isFirstBillInVM ? vmName : '',
           vcenter_vm_id: isFirstBillInVM ? bill.vcenter_vm_id : '',
           bill_date: bill.bill_date?.toISOString?.().split('T')[0] || bill.bill_date,
@@ -164,6 +157,7 @@ router.get('/export', auth, async (req: AuthRequest, res: Response) => {
       // VM subtotal row
       const vmSubtotalRow = sheet.addRow({
         project_name: '',
+        project_code: '',
         vm_name: `${vmName} 小计`,
         daily_cost: vmTotal.toFixed(2)
       });
@@ -174,7 +168,8 @@ router.get('/export', auth, async (req: AuthRequest, res: Response) => {
 
     // Project total row
     const projectTotalRow = sheet.addRow({
-      project_name: `${projectName} 合计`,
+      project_name: `${projectData.projectName} 合计`,
+      project_code: '',
       daily_cost: projectTotal.toFixed(2)
     });
     projectTotalRow.font = { bold: true };
@@ -187,6 +182,7 @@ router.get('/export', auth, async (req: AuthRequest, res: Response) => {
   sheet.addRow({});
   const grandTotalRow = sheet.addRow({
     project_name: '总计',
+    project_code: '',
     daily_cost: grandTotal.toFixed(2)
   });
   grandTotalRow.font = { bold: true };

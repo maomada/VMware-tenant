@@ -58,7 +58,7 @@ router.put('/projects/:id/user', auth, adminOnly, async (req, res) => {
 // VM 管理
 router.get('/vms', auth, adminOnly, async (req, res) => {
   const result = await pool.query(
-    `SELECT vm.*, p.name as project_name, u.username
+    `SELECT vm.*, p.name as project_name, p.project_code, u.username
      FROM virtual_machines vm
      LEFT JOIN projects p ON vm.project_id = p.id
      LEFT JOIN users u ON p.user_id = u.id

@@ -67,6 +67,7 @@ export default function Projects() {
 
   const columns = [
     { title: '项目名称', dataIndex: 'name' },
+    { title: '项目编号', dataIndex: 'project_code' },
     { title: 'vCenter Folder', dataIndex: 'vcenter_folder_path' },
     {
       title: '状态', dataIndex: 'status', render: (v: string) => (
@@ -100,6 +101,16 @@ export default function Projects() {
         <Form form={form} layout="vertical" onFinish={onCreate}>
           <Form.Item name="name" label="项目名称" rules={[{ required: true }]}>
             <Input placeholder="例如：研发部门" />
+          </Form.Item>
+          <Form.Item
+            name="projectCode"
+            label="项目编号"
+            rules={[
+              { required: true, message: '请输入项目编号' },
+              { pattern: /^[A-Z0-9_-]+$/, message: '仅允许大写字母、数字、-、_' }
+            ]}
+          >
+            <Input placeholder="例如：PROJ-000001" />
           </Form.Item>
           <Form.Item name="vcenterFolderPath" label="vCenter Folder 路径" rules={[{ required: true }]}>
             <Input placeholder="例如：/Datacenter/vm/研发部门" />

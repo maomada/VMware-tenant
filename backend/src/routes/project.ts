@@ -39,6 +39,7 @@ async function syncProjectVMs(
   for (const vm of vcenterVMs) {
     const details = await vsphere.getVM(vm.vm);
     const gpuInfo = await vsphere.getVmGpuInfo(vm.vm);
+    const metadata = await vsphere.getVMMetadata(vm.vm);
     const existing = await pool.query(
       'SELECT id, project_id FROM virtual_machines WHERE vcenter_vm_id = $1',
       [vm.vm]
@@ -47,12 +48,18 @@ async function syncProjectVMs(
     const isNewBinding = existing.rows.length === 0 || oldProjectId !== project.id;
 
     const upserted = await pool.query(
-      `INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status, bound_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO virtual_machines (
+        project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb,
+        gpu_count, gpu_type, status, bound_at, create_time, end_time, owner
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, $10), $12, $13)
        ON CONFLICT (vcenter_vm_id) DO UPDATE SET
          project_id = $1, name = $3, cpu_cores = $4, memory_gb = $5, storage_gb = $6, gpu_count = $7, gpu_type = $8, status = $9,
          bound_at = CASE WHEN virtual_machines.project_id IS DISTINCT FROM $1 THEN $10 ELSE virtual_machines.bound_at END,
-         unbound_at = CASE WHEN virtual_machines.project_id IS DISTINCT FROM $1 THEN NULL ELSE virtual_machines.unbound_at END
+         unbound_at = CASE WHEN virtual_machines.project_id IS DISTINCT FROM $1 THEN NULL ELSE virtual_machines.unbound_at END,
+         create_time = COALESCE($11, virtual_machines.create_time),
+         end_time = $12,
+         owner = COALESCE($13, virtual_machines.owner)
        RETURNING id`,
       [
         project.id,
@@ -64,7 +71,10 @@ async function syncProjectVMs(
         gpuInfo.gpuCount,
         gpuInfo.gpuType,
         vm.power_state || 'unknown',
-        now
+        now,
+        metadata.createTime,
+        metadata.deadline,
+        metadata.owner
       ]
     );
     if (isNewBinding) {
@@ -101,7 +111,20 @@ router.get('/', auth, async (req: AuthRequest, res) => {
 });
 
 router.post('/', auth, async (req: AuthRequest, res) => {
-  const { name, vcenterFolderPath } = req.body;
+  const { name, projectCode, vcenterFolderPath } = req.body;
+
+  const trimmedCode = String(projectCode || '').trim();
+  if (!trimmedCode) {
+    return res.status(400).json({ error: 'project_code is required' });
+  }
+  if (!/^[A-Z0-9_-]+$/.test(trimmedCode)) {
+    return res.status(400).json({ error: 'Invalid project_code format' });
+  }
+
+  const existingCode = await pool.query('SELECT 1 FROM projects WHERE project_code = $1', [trimmedCode]);
+  if (existingCode.rows.length > 0) {
+    return res.status(400).json({ error: 'project_code already exists' });
+  }
 
   const folderName = vcenterFolderPath.split('/').pop();
   let folderId = null;
@@ -111,24 +134,31 @@ router.post('/', auth, async (req: AuthRequest, res) => {
     // vCenter 连接失败时继续，稍后可以同步
   }
 
-  const result = await pool.query(
-    `INSERT INTO projects (user_id, name, vcenter_folder_path, vcenter_folder_id)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [req.user?.id, name, vcenterFolderPath, folderId]
-  );
-  const project = result.rows[0];
-  let vmCount = 0;
-  let firstSyncDone = false;
-
   try {
-    const syncResult = await syncProjectVMs(project);
-    vmCount = syncResult.vms.length;
-    firstSyncDone = syncResult.didSync;
-  } catch (err) {
-    console.warn(`[Sync] Initial sync failed for project ${project.id}:`, err);
-  }
+    const result = await pool.query(
+      `INSERT INTO projects (user_id, name, project_code, vcenter_folder_path, vcenter_folder_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.user?.id, name, trimmedCode, vcenterFolderPath, folderId]
+    );
+    const project = result.rows[0];
+    let vmCount = 0;
+    let firstSyncDone = false;
 
-  res.json({ ...project, vmCount, firstSyncDone });
+    try {
+      const syncResult = await syncProjectVMs(project);
+      vmCount = syncResult.vms.length;
+      firstSyncDone = syncResult.didSync;
+    } catch (err) {
+      console.warn(`[Sync] Initial sync failed for project ${project.id}:`, err);
+    }
+
+    res.json({ ...project, vmCount, firstSyncDone });
+  } catch (err: any) {
+    if (err?.code === '23505') {
+      return res.status(400).json({ error: 'project_code already exists' });
+    }
+    throw err;
+  }
 });
 
 router.get('/:id', auth, async (req: AuthRequest, res) => {

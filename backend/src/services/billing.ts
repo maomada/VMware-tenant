@@ -31,6 +31,7 @@ export async function recordUsage() {
 // 同步 VM 配置并检测变更（参考 BillCheck 逻辑）
 export async function syncVMConfigs() {
   const projects = await pool.query('SELECT * FROM projects WHERE vcenter_folder_path IS NOT NULL');
+  const now = new Date();
 
   for (const project of projects.rows) {
     let folderId = project.vcenter_folder_id;
@@ -55,6 +56,8 @@ export async function syncVMConfigs() {
     for (const vm of vcenterVMs) {
       const details = await vsphere.getVM(vm.vm);
       const gpuInfo = await vsphere.getVmGpuInfo(vm.vm);
+      const metadata = await vsphere.getVMMetadata(vm.vm);
+      const createTimeForInsert = metadata.createTime ?? now;
       const newConfig = {
         name: vm.name,
         cpu_cores: details.cpu?.count || 1,
@@ -62,7 +65,10 @@ export async function syncVMConfigs() {
         storage_gb: Math.ceil((details.disks ? Object.values(details.disks).reduce((sum: number, d: any) => sum + (d.capacity || 0), 0) : 0) / 1024 / 1024 / 1024),
         gpu_count: gpuInfo.gpuCount,
         gpu_type: gpuInfo.gpuType,
-        status: vm.power_state || 'unknown'
+        status: vm.power_state || 'unknown',
+        create_time: metadata.createTime,
+        end_time: metadata.deadline,
+        owner: metadata.owner
       };
 
       // 检查是否存在该 VM
@@ -80,14 +86,30 @@ export async function syncVMConfigs() {
         }
 
         await pool.query(`
-          UPDATE virtual_machines SET name=$1, cpu_cores=$2, memory_gb=$3, storage_gb=$4, gpu_count=$5, gpu_type=$6, status=$7
-          WHERE vcenter_vm_id=$8
-        `, [newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb, newConfig.gpu_count, newConfig.gpu_type, newConfig.status, vm.vm]);
+          UPDATE virtual_machines SET
+            name=$1, cpu_cores=$2, memory_gb=$3, storage_gb=$4, gpu_count=$5, gpu_type=$6, status=$7,
+            create_time=COALESCE($8, create_time),
+            end_time=$9,
+            owner=COALESCE($10, owner)
+          WHERE vcenter_vm_id=$11
+        `, [
+          newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb,
+          newConfig.gpu_count, newConfig.gpu_type, newConfig.status,
+          newConfig.create_time, newConfig.end_time, newConfig.owner,
+          vm.vm
+        ]);
       } else {
         await pool.query(`
-          INSERT INTO virtual_machines (project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb, gpu_count, gpu_type, status)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        `, [project.id, vm.vm, newConfig.name, newConfig.cpu_cores, newConfig.memory_gb, newConfig.storage_gb, newConfig.gpu_count, newConfig.gpu_type, newConfig.status]);
+          INSERT INTO virtual_machines (
+            project_id, vcenter_vm_id, name, cpu_cores, memory_gb, storage_gb,
+            gpu_count, gpu_type, status, create_time, end_time, owner
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `, [
+          project.id, vm.vm, newConfig.name, newConfig.cpu_cores, newConfig.memory_gb,
+          newConfig.storage_gb, newConfig.gpu_count, newConfig.gpu_type, newConfig.status,
+          createTimeForInsert, newConfig.end_time, newConfig.owner
+        ]);
       }
     }
   }
