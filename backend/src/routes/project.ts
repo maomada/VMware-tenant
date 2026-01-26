@@ -142,18 +142,7 @@ router.post('/', auth, async (req: AuthRequest, res) => {
       [req.user?.id, name, trimmedCode, folderId]
     );
     const project = result.rows[0];
-    let vmCount = 0;
-    let firstSyncDone = false;
-
-    try {
-      const syncResult = await syncProjectVMs(project);
-      vmCount = syncResult.vms.length;
-      firstSyncDone = syncResult.didSync;
-    } catch (err) {
-      console.warn(`[Sync] Initial sync failed for project ${project.id}:`, err);
-    }
-
-    res.json({ ...project, vmCount, firstSyncDone });
+    res.json(project);
   } catch (err: any) {
     if (err?.code === '23505') {
       return res.status(400).json({ error: 'project_code already exists' });

@@ -26,18 +26,15 @@ export default function Projects() {
 
   const onCreate = async (values: any) => {
     try {
-      const res = await projects.create(values);
+      await projects.create(values);
       message.success('创建成功');
       setModal(false);
       form.resetFields();
       load();
-      // 首次同步无 VM 时弹窗提示
-      if (res.data.vmCount === 0) {
-        Modal.info({
-          title: '提示',
-          content: '该文件夹下暂无虚拟机，系统将在后台自动同步新增的虚拟机。',
-        });
-      }
+      Modal.info({
+        title: '提示',
+        content: '项目创建成功！系统将在10分钟内自动同步虚拟机，您也可以稍后手动点击"同步VM"按钮进行同步。',
+      });
     } catch (e: any) {
       message.error(e.response?.data?.error || '创建失败');
     }
