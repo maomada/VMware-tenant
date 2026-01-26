@@ -35,7 +35,6 @@ export default function AdminProjects() {
   const columns = [
     { title: '项目名称', dataIndex: 'name' },
     { title: '项目编号', dataIndex: 'project_code' },
-    { title: 'vCenter Folder', dataIndex: 'vcenter_folder_path' },
     { title: '绑定用户', dataIndex: 'username' },
     { title: '用户邮箱', dataIndex: 'user_email' },
     { title: 'VM数量', dataIndex: 'vm_count' },

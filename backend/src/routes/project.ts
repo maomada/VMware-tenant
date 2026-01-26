@@ -11,11 +11,10 @@ async function syncProjectVMs(
   options: { requireFolderId?: boolean } = {}
 ) {
   let folderId = project.vcenter_folder_id;
-  console.log(`[Sync] Project: ${project.name}, FolderId: ${folderId}, Path: ${project.vcenter_folder_path}`);
+  const folderName = String(project.name || '').trim();
+  console.log(`[Sync] Project: ${project.name}, FolderId: ${folderId}, Folder: ${folderName}`);
 
   if (!folderId) {
-    const trimmedPath = (project.vcenter_folder_path || '').replace(/\/+$/, '');
-    const folderName = trimmedPath.split('/').pop();
     if (folderName) {
       console.log(`[Sync] Looking up folder: ${folderName}`);
       folderId = await vsphere.getFolderByName(folderName);
@@ -111,7 +110,7 @@ router.get('/', auth, async (req: AuthRequest, res) => {
 });
 
 router.post('/', auth, async (req: AuthRequest, res) => {
-  const { name, projectCode, vcenterFolderPath } = req.body;
+  const { name, projectCode } = req.body;
 
   const trimmedCode = String(projectCode || '').trim();
   if (!trimmedCode) {
@@ -126,19 +125,21 @@ router.post('/', auth, async (req: AuthRequest, res) => {
     return res.status(400).json({ error: 'project_code already exists' });
   }
 
-  const folderName = vcenterFolderPath.split('/').pop();
+  const folderName = String(name || '').trim();
   let folderId = null;
   try {
-    folderId = await vsphere.getFolderByName(folderName);
+    if (folderName) {
+      folderId = await vsphere.getFolderByName(folderName);
+    }
   } catch (e) {
     // vCenter 连接失败时继续，稍后可以同步
   }
 
   try {
     const result = await pool.query(
-      `INSERT INTO projects (user_id, name, project_code, vcenter_folder_path, vcenter_folder_id)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [req.user?.id, name, trimmedCode, vcenterFolderPath, folderId]
+      `INSERT INTO projects (user_id, name, project_code, vcenter_folder_id)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.user?.id, name, trimmedCode, folderId]
     );
     const project = result.rows[0];
     let vmCount = 0;

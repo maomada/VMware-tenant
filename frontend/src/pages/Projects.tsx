@@ -68,7 +68,6 @@ export default function Projects() {
   const columns = [
     { title: '项目名称', dataIndex: 'name' },
     { title: '项目编号', dataIndex: 'project_code' },
-    { title: 'vCenter Folder', dataIndex: 'vcenter_folder_path' },
     {
       title: '状态', dataIndex: 'status', render: (v: string) => (
         <Tag color={v === 'active' ? 'green' : 'default'}>{v}</Tag>
@@ -111,9 +110,6 @@ export default function Projects() {
             ]}
           >
             <Input placeholder="例如：PROJ-000001" />
-          </Form.Item>
-          <Form.Item name="vcenterFolderPath" label="vCenter Folder 路径" rules={[{ required: true }]}>
-            <Input placeholder="例如：/Datacenter/vm/研发部门" />
           </Form.Item>
         </Form>
       </Modal>

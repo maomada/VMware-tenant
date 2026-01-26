@@ -132,15 +132,14 @@ export async function cleanupOldBills() {
 
 // 同步VM配置并记录绑定时间
 export async function syncVMConfigsWithBinding() {
-  const projects = await pool.query('SELECT * FROM projects WHERE vcenter_folder_path IS NOT NULL');
+  const projects = await pool.query('SELECT * FROM projects');
   const now = new Date();
 
   for (const project of projects.rows) {
     try {
       let folderId = project.vcenter_folder_id;
       if (!folderId) {
-        const trimmedPath = (project.vcenter_folder_path || '').replace(/\/+$/, '');
-        const folderName = trimmedPath.split('/').pop();
+        const folderName = String(project.name || '').trim();
         if (folderName) {
           folderId = await vsphere.getFolderByName(folderName);
           if (folderId) {

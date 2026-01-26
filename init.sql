@@ -18,11 +18,11 @@ CREATE TABLE projects (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
     project_code VARCHAR(50) UNIQUE NOT NULL,
-    vcenter_folder_path VARCHAR(500) NOT NULL,
+    vcenter_folder_path VARCHAR(500),
     vcenter_folder_id VARCHAR(100),
     status VARCHAR(20) DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, vcenter_folder_path)
+    UNIQUE(user_id, name)
 );
 
 -- 虚拟机表
