@@ -8,8 +8,13 @@ import vmRoutes from './routes/vm';
 import billingRoutes from './routes/billing';
 import dailyBillingRoutes from './routes/dailyBilling';
 import adminRoutes from './routes/admin';
+import resourceRequestRoutes, { adminRouter as adminResourceRequestRoutes } from './routes/resourceRequest';
+import gpuRoutes from './routes/gpu';
+import networkPoolRoutes from './routes/network';
 import { recordUsage, syncVMConfigs } from './services/billing';
 import { generateDailyBills, cleanupOldBills, syncVMConfigsWithBinding } from './services/dailyBilling';
+import { syncGPUInventory } from './services/gpu';
+import { monitorDeploymentTimeouts } from './services/deployment';
 
 dotenv.config();
 
@@ -27,6 +32,10 @@ app.use('/api/vms', vmRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/daily-billing', dailyBillingRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/resource-requests', resourceRequestRoutes);
+app.use('/api/admin/resource-requests', adminResourceRequestRoutes);
+app.use('/api/gpu', gpuRoutes);
+app.use('/api/admin/network-pools', networkPoolRoutes);
 
 // Global error handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -51,6 +60,28 @@ cron.schedule('*/10 * * * *', async () => {
     await syncVMConfigsWithBinding();
   } catch (err) {
     console.error('[Cron] periodic VM sync error:', err);
+  }
+});
+
+// Every 10 minutes sync GPU inventory
+cron.schedule('*/10 * * * *', async () => {
+  try {
+    console.log('[Cron] Syncing GPU inventory...');
+    await syncGPUInventory();
+  } catch (err) {
+    console.error('[Cron] gpu inventory sync error:', err);
+  }
+});
+
+// Every 5 minutes monitor deployment timeouts
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    const flagged = await monitorDeploymentTimeouts();
+    if (flagged > 0) {
+      console.warn(`[Cron] Deployment timeouts flagged: ${flagged}`);
+    }
+  } catch (err) {
+    console.error('[Cron] deployment timeout monitor error:', err);
   }
 });
 

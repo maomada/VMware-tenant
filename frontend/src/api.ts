@@ -59,6 +59,22 @@ export const dailyBilling = {
     api.put('/daily-billing/pricing', { resourceType, unitPrice })
 };
 
+export const resourceRequests = {
+  list: (params?: { status?: string; environment?: string; page?: number; limit?: number; search?: string }) =>
+    api.get('/resource-requests', { params }),
+  get: (id: number) => api.get(`/resource-requests/${id}`),
+  create: (data: any) => api.post('/resource-requests', data),
+  delete: (id: number) => api.delete(`/resource-requests/${id}`)
+};
+
+export const gpu = {
+  inventory: (params?: { status?: string; gpu_model?: string; host_name?: string }) =>
+    api.get('/gpu/inventory', { params }),
+  sync: () => api.post('/gpu/sync'),
+  availability: (params?: { gpu_model?: string }) => api.get('/gpu/availability', { params }),
+  updateStatus: (id: number, status: string) => api.patch(`/gpu/${id}/status`, { status })
+};
+
 export const admin = {
   users: () => api.get('/admin/users'),
   updatePassword: (id: number, password: string) => api.put(`/admin/users/${id}/password`, { password }),
@@ -70,7 +86,27 @@ export const admin = {
   vms: () => api.get('/admin/vms'),
   updateVmProject: (id: number, projectId: number) => api.put(`/admin/vms/${id}/project`, { projectId }),
   pricing: () => api.get('/admin/pricing'),
-  updatePricing: (prices: any[]) => api.put('/admin/pricing', { prices })
+  updatePricing: (prices: any[]) => api.put('/admin/pricing', { prices }),
+  resourceRequests: (params?: { status?: string; environment?: string; page?: number; limit?: number; search?: string }) =>
+    api.get('/admin/resource-requests', { params }),
+  resourceRequestStats: () => api.get('/admin/resource-requests/stats'),
+  approveResourceRequest: (id: number, data: { admin_notes?: string }) =>
+    api.patch(`/admin/resource-requests/${id}/approve`, data),
+  rejectResourceRequest: (id: number, data: { rejection_reason: string; admin_notes?: string }) =>
+    api.patch(`/admin/resource-requests/${id}/reject`, data),
+  deployResourceRequest: (id: number, data: { vm_configs?: Array<{
+    vm_item_id: number;
+    vm_name?: string;
+    template_name?: string;
+    datastore?: string;
+    vcenter_folder?: string;
+  }> }) => api.post(`/admin/resource-requests/${id}/deploy`, data),
+  resourceRequestDeploymentLogs: (id: number) => api.get(`/admin/resource-requests/${id}/deployment-logs`),
+  networkPools: () => api.get('/admin/network-pools'),
+  createNetworkPool: (data: any) => api.post('/admin/network-pools', data),
+  updateNetworkPool: (id: number, data: any) => api.put(`/admin/network-pools/${id}`, data),
+  deleteNetworkPool: (id: number) => api.delete(`/admin/network-pools/${id}`),
+  networkPoolAllocations: (id: number) => api.get(`/admin/network-pools/${id}/ip-allocations`)
 };
 
 export default api;

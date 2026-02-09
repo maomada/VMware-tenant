@@ -156,6 +156,30 @@ class VSphereService {
     return deviceMap;
   }
 
+  private isGpuDeviceName(deviceName: string) {
+    return /nvidia|geforce|tesla|quadro|rtx|gtx/i.test(deviceName);
+  }
+
+  private extractGpuModelFromDeviceName(deviceName: string) {
+    const bracketMatch = deviceName.match(/\[([^\]]+)\]/);
+    if (bracketMatch?.[1]) {
+      return bracketMatch[1].trim();
+    }
+    return deviceName.trim();
+  }
+
+  private async getHostNameMap() {
+    if (!this.sessionId) await this.authenticate();
+    const res = await this.client.get('/api/vcenter/host', { headers: this.headers });
+    const hostMap = new Map<string, string>();
+    for (const host of res.data || []) {
+      if (host.host) {
+        hostMap.set(host.host, host.name || host.host);
+      }
+    }
+    return hostMap;
+  }
+
   private async getCustomFieldDefinitions(): Promise<Map<string, string>> {
     const now = Date.now();
     if (this.customFieldCache && now - this.customFieldCacheAt < 5 * 60 * 1000) {
@@ -370,6 +394,61 @@ class VSphereService {
     return { gpuCount, gpuType: uniqueTypes.length ? uniqueTypes.join(', ') : null };
   }
 
+  private async loadGpuService() {
+    return await import('./gpu');
+  }
+
+  async syncGPUInventory() {
+    const deviceMap = await this.getHostPciDeviceMap();
+    let hostMap = new Map<string, string>();
+    try {
+      hostMap = await this.getHostNameMap();
+    } catch (err) {
+      console.warn('[vSphere] Failed to load host names:', err);
+    }
+
+    const inventory: {
+      deviceId: string;
+      deviceName: string;
+      gpuModel: string;
+      hostId: string;
+      hostName: string;
+    }[] = [];
+
+    for (const [key, deviceName] of deviceMap.entries()) {
+      if (!this.isGpuDeviceName(deviceName)) continue;
+      const separatorIndex = key.indexOf(':');
+      if (separatorIndex <= 0) continue;
+      const hostId = key.slice(0, separatorIndex);
+      const deviceId = key.slice(separatorIndex + 1);
+      const gpuModel = this.extractGpuModelFromDeviceName(deviceName);
+      inventory.push({
+        deviceId,
+        deviceName,
+        gpuModel,
+        hostId,
+        hostName: hostMap.get(hostId) || hostId
+      });
+    }
+
+    return inventory;
+  }
+
+  async validateGPUAvailability(gpuType: string, count: number) {
+    const gpuService = await this.loadGpuService();
+    return gpuService.validateGPUAvailability(gpuType, count);
+  }
+
+  async reserveGPUs(gpuType: string, count: number) {
+    const gpuService = await this.loadGpuService();
+    return gpuService.reserveGPUs(gpuType, count);
+  }
+
+  async releaseGPUs(gpuIds: string[]) {
+    const gpuService = await this.loadGpuService();
+    return gpuService.releaseGPUs(gpuIds);
+  }
+
   async getVMMetadata(vmId: string): Promise<{
     createTime: Date | null;
     deadline: Date | null;
@@ -436,6 +515,423 @@ class VSphereService {
       console.warn(`[vSphere] Failed to fetch metadata for VM ${vmId}:`, err);
       return { createTime: null, deadline: null, owner: null };
     }
+  }
+
+  private async sleep(ms: number) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async withRetry<T>(fn: () => Promise<T>, label: string, retries = 2, delayMs = 1000): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastError = err;
+        if (attempt === retries) break;
+        console.warn(`[vSphere] ${label} failed (attempt ${attempt + 1}/${retries + 1}), retrying...`);
+        await this.sleep(delayMs * (attempt + 1));
+      }
+    }
+    throw lastError;
+  }
+
+  private extractTaskId(xml: string): string | null {
+    const taskMatch = xml.match(/<returnval[^>]*type="Task"[^>]*>([^<]+)<\/returnval>/);
+    if (taskMatch?.[1]) return this.decodeXml(taskMatch[1]);
+    const altMatch = xml.match(/<returnval[^>]*>(task-[^<]+)<\/returnval>/);
+    return altMatch?.[1] ? this.decodeXml(altMatch[1]) : null;
+  }
+
+  private parseTaskStatus(xml: string) {
+    const stateMatch = xml.match(/<name>info\.state<\/name>\s*<val[^>]*>([^<]+)<\/val>/);
+    const progressMatch = xml.match(/<name>info\.progress<\/name>\s*<val[^>]*>([^<]+)<\/val>/);
+    const resultMatch = xml.match(/<name>info\.result<\/name>\s*<val[^>]*>([^<]+)<\/val>/);
+    const errorMatch = xml.match(/<name>info\.error<\/name>\s*<val[^>]*>([\s\S]*?)<\/val>/);
+
+    let errorMessage: string | undefined;
+    if (errorMatch?.[1]) {
+      const localized = errorMatch[1].match(/<localizedMessage>([^<]+)<\/localizedMessage>/);
+      const fault = errorMatch[1].match(/<faultCause>([\s\S]*?)<\/faultCause>/);
+      if (localized?.[1]) {
+        errorMessage = this.decodeXml(localized[1]);
+      } else if (fault?.[1]) {
+        errorMessage = this.decodeXml(fault[1]);
+      } else {
+        const messageMatch = errorMatch[1].match(/<msg>([^<]+)<\/msg>/);
+        if (messageMatch?.[1]) {
+          errorMessage = this.decodeXml(messageMatch[1]);
+        }
+      }
+    }
+
+    const state = stateMatch?.[1] ? this.decodeXml(stateMatch[1]) : 'running';
+    const progress = progressMatch?.[1] ? Number(progressMatch[1]) : 0;
+    const resultId = resultMatch?.[1] ? this.decodeXml(resultMatch[1]) : undefined;
+
+    return {
+      status: state as 'queued' | 'running' | 'success' | 'error',
+      progress: Number.isFinite(progress) ? progress : 0,
+      errorMessage,
+      resultId
+    };
+  }
+
+  private async getVmIdByName(name: string): Promise<string | null> {
+    if (!this.sessionId) await this.authenticate();
+    const res = await this.client.get('/api/vcenter/vm', {
+      headers: this.headers,
+      params: { 'filter.names': name }
+    });
+    const vm = Array.isArray(res.data) ? res.data[0] : null;
+    return vm?.vm || null;
+  }
+
+  private async getDatastoreIdByName(name: string): Promise<string | null> {
+    if (!this.sessionId) await this.authenticate();
+    const res = await this.client.get('/api/vcenter/datastore', {
+      headers: this.headers
+    });
+    const datastore = (res.data || []).find((d: any) => d.name === name);
+    return datastore?.datastore || null;
+  }
+
+  private async getResourcePoolIdByName(name: string): Promise<string | null> {
+    if (!this.sessionId) await this.authenticate();
+    const res = await this.client.get('/api/vcenter/resource-pool', {
+      headers: this.headers
+    });
+    const pool = (res.data || []).find((p: any) => p.name === name);
+    return pool?.resource_pool || null;
+  }
+
+  private async getPrimaryDiskInfo(vmId: string): Promise<{
+    key: number;
+    controllerKey: number;
+    unitNumber: number;
+    capacityKB: number;
+  } | null> {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:RetrieveProperties>
+      <urn:_this type="PropertyCollector">propertyCollector</urn:_this>
+      <urn:specSet>
+        <urn:propSet>
+          <urn:type>VirtualMachine</urn:type>
+          <urn:pathSet>config.hardware.device</urn:pathSet>
+        </urn:propSet>
+        <urn:objectSet>
+          <urn:obj type="VirtualMachine">${vmId}</urn:obj>
+        </urn:objectSet>
+      </urn:specSet>
+    </urn:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const data = await this.soapRequest(xml);
+    const diskRegex = /<VirtualDisk[^>]*>([\s\S]*?)<\/VirtualDisk>/g;
+    let match: RegExpExecArray | null;
+    while ((match = diskRegex.exec(data)) !== null) {
+      const block = match[1];
+      const keyMatch = block.match(/<key>(-?\d+)<\/key>/);
+      const controllerMatch = block.match(/<controllerKey>(-?\d+)<\/controllerKey>/);
+      const unitMatch = block.match(/<unitNumber>(\d+)<\/unitNumber>/);
+      const capacityMatch = block.match(/<capacityInKB>(\d+)<\/capacityInKB>/);
+      if (keyMatch && controllerMatch && unitMatch && capacityMatch) {
+        return {
+          key: Number(keyMatch[1]),
+          controllerKey: Number(controllerMatch[1]),
+          unitNumber: Number(unitMatch[1]),
+          capacityKB: Number(capacityMatch[1])
+        };
+      }
+    }
+
+    return null;
+  }
+
+  async cloneVM(config: {
+    templateName: string;
+    vmName: string;
+    folderPath?: string;
+    folderId?: string;
+    datastoreName?: string;
+    datastoreId?: string;
+    resourcePoolName?: string;
+    resourcePoolId?: string;
+  }): Promise<{ taskId: string }> {
+    const templateId = await this.getVmIdByName(config.templateName);
+    if (!templateId) {
+      throw new Error(`Template not found: ${config.templateName}`);
+    }
+
+    let folderId = config.folderId;
+    if (!folderId) {
+      const folderName = config.folderPath?.split('/').filter(Boolean).pop();
+      if (folderName) {
+        folderId = (await this.getFolderByName(folderName)) ?? undefined;
+      }
+    }
+    if (!folderId) {
+      throw new Error('Target folder not found');
+    }
+
+    let datastoreId = config.datastoreId;
+    if (!datastoreId && config.datastoreName) {
+      datastoreId = (await this.getDatastoreIdByName(config.datastoreName)) ?? undefined;
+      if (!datastoreId) {
+        throw new Error(`Datastore not found: ${config.datastoreName}`);
+      }
+    }
+
+    let resourcePoolId = config.resourcePoolId;
+    if (!resourcePoolId && config.resourcePoolName) {
+      resourcePoolId = (await this.getResourcePoolIdByName(config.resourcePoolName)) ?? undefined;
+      if (!resourcePoolId) {
+        throw new Error(`Resource pool not found: ${config.resourcePoolName}`);
+      }
+    }
+
+    const locationXml = [
+      datastoreId ? `<urn:datastore type="Datastore">${datastoreId}</urn:datastore>` : '',
+      resourcePoolId ? `<urn:pool type="ResourcePool">${resourcePoolId}</urn:pool>` : ''
+    ].join('');
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:CloneVM_Task>
+      <urn:_this type="VirtualMachine">${templateId}</urn:_this>
+      <urn:folder type="Folder">${folderId}</urn:folder>
+      <urn:name>${config.vmName}</urn:name>
+      <urn:spec>
+        <urn:location>
+          ${locationXml}
+        </urn:location>
+        <urn:powerOn>false</urn:powerOn>
+        <urn:template>false</urn:template>
+      </urn:spec>
+    </urn:CloneVM_Task>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const data = await this.withRetry(() => this.soapRequest(xml), 'CloneVM_Task');
+    const taskId = this.extractTaskId(data);
+    if (!taskId) {
+      throw new Error('CloneVM_Task did not return task id');
+    }
+    return { taskId };
+  }
+
+  async reconfigureVM(
+    vmId: string,
+    config: {
+      cpuCores?: number;
+      memoryMB?: number;
+      diskGB?: number;
+    }
+  ): Promise<string> {
+    const deviceChange: string[] = [];
+    if (typeof config.diskGB === 'number' && config.diskGB > 0) {
+      const diskInfo = await this.getPrimaryDiskInfo(vmId);
+      if (diskInfo) {
+        const desiredKB = Math.round(config.diskGB * 1024 * 1024);
+        if (desiredKB > diskInfo.capacityKB) {
+          deviceChange.push(`
+            <urn:deviceChange>
+              <urn:operation>edit</urn:operation>
+              <urn:device xsi:type="VirtualDisk">
+                <urn:key>${diskInfo.key}</urn:key>
+                <urn:controllerKey>${diskInfo.controllerKey}</urn:controllerKey>
+                <urn:unitNumber>${diskInfo.unitNumber}</urn:unitNumber>
+                <urn:capacityInKB>${desiredKB}</urn:capacityInKB>
+              </urn:device>
+            </urn:deviceChange>
+          `);
+        }
+      }
+    }
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soapenv:Body>
+    <urn:ReconfigVM_Task>
+      <urn:_this type="VirtualMachine">${vmId}</urn:_this>
+      <urn:spec>
+        ${typeof config.cpuCores === 'number' ? `<urn:numCPUs>${config.cpuCores}</urn:numCPUs>` : ''}
+        ${typeof config.memoryMB === 'number' ? `<urn:memoryMB>${config.memoryMB}</urn:memoryMB>` : ''}
+        ${deviceChange.join('')}
+      </urn:spec>
+    </urn:ReconfigVM_Task>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const data = await this.withRetry(() => this.soapRequest(xml), 'ReconfigVM_Task');
+    const taskId = this.extractTaskId(data);
+    if (!taskId) {
+      throw new Error('ReconfigVM_Task did not return task id');
+    }
+    return taskId;
+  }
+
+  async configureNetwork(
+    vmId: string,
+    networkConfig: {
+      ipAddress: string;
+      gateway: string;
+      subnetMask: string;
+      dnsServers: string[];
+      hostName?: string;
+    }
+  ): Promise<string> {
+    const dnsXml = networkConfig.dnsServers
+      .map((dns) => `<urn:dnsServerList>${dns}</urn:dnsServerList>`)
+      .join('');
+    const hostName = networkConfig.hostName || `vm-${vmId}`;
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:CustomizeVM_Task>
+      <urn:_this type="VirtualMachine">${vmId}</urn:_this>
+      <urn:spec>
+        <urn:globalIPSettings>
+          ${dnsXml}
+        </urn:globalIPSettings>
+        <urn:nicSettingMap>
+          <urn:adapter>
+            <urn:ip>
+              <urn:ipAddress>${networkConfig.ipAddress}</urn:ipAddress>
+              <urn:subnetMask>${networkConfig.subnetMask}</urn:subnetMask>
+            </urn:ip>
+            <urn:gateway>${networkConfig.gateway}</urn:gateway>
+            ${dnsXml}
+          </urn:adapter>
+        </urn:nicSettingMap>
+        <urn:identity>
+          <urn:linuxPrep>
+            <urn:hostName>
+              <urn:fixedName>${hostName}</urn:fixedName>
+            </urn:hostName>
+            <urn:domain>local</urn:domain>
+          </urn:linuxPrep>
+        </urn:identity>
+      </urn:spec>
+    </urn:CustomizeVM_Task>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const data = await this.withRetry(() => this.soapRequest(xml), 'CustomizeVM_Task');
+    const taskId = this.extractTaskId(data);
+    if (!taskId) {
+      throw new Error('CustomizeVM_Task did not return task id');
+    }
+    return taskId;
+  }
+
+  async attachGPUPassthrough(
+    vmId: string,
+    gpuConfig: {
+      devices: Array<{
+        deviceId: string;
+        hostId?: string;
+        deviceName?: string;
+        vendorId?: string;
+      }>;
+    }
+  ): Promise<string> {
+    if (!gpuConfig.devices.length) {
+      throw new Error('No GPU devices specified');
+    }
+
+    const deviceChangeXml = gpuConfig.devices.map((device) => {
+      return `
+        <urn:deviceChange>
+          <urn:operation>add</urn:operation>
+          <urn:device xsi:type="VirtualPCIPassthrough">
+            <urn:key>-1</urn:key>
+            <urn:backing xsi:type="VirtualPCIPassthroughDeviceBackingInfo">
+              <urn:id>${device.deviceId}</urn:id>
+              <urn:deviceId>${device.deviceId}</urn:deviceId>
+              ${device.hostId ? `<urn:systemId>${device.hostId}</urn:systemId>` : ''}
+              ${device.vendorId ? `<urn:vendorId>${device.vendorId}</urn:vendorId>` : ''}
+              ${device.deviceName ? `<urn:deviceName>${device.deviceName}</urn:deviceName>` : ''}
+            </urn:backing>
+          </urn:device>
+        </urn:deviceChange>
+      `;
+    }).join('');
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soapenv:Body>
+    <urn:ReconfigVM_Task>
+      <urn:_this type="VirtualMachine">${vmId}</urn:_this>
+      <urn:spec>
+        ${deviceChangeXml}
+      </urn:spec>
+    </urn:ReconfigVM_Task>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const data = await this.withRetry(() => this.soapRequest(xml), 'ReconfigVM_Task(attachGPU)');
+    const taskId = this.extractTaskId(data);
+    if (!taskId) {
+      throw new Error('AttachGPUPassthrough did not return task id');
+    }
+    return taskId;
+  }
+
+  async getTaskStatus(taskId: string): Promise<{
+    status: 'queued' | 'running' | 'success' | 'error';
+    progress: number;
+    errorMessage?: string;
+    resultId?: string;
+  }> {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:vim25">
+  <soapenv:Body>
+    <urn:RetrieveProperties>
+      <urn:_this type="PropertyCollector">propertyCollector</urn:_this>
+      <urn:specSet>
+        <urn:propSet>
+          <urn:type>Task</urn:type>
+          <urn:pathSet>info.state</urn:pathSet>
+          <urn:pathSet>info.progress</urn:pathSet>
+          <urn:pathSet>info.error</urn:pathSet>
+          <urn:pathSet>info.result</urn:pathSet>
+        </urn:propSet>
+        <urn:objectSet>
+          <urn:obj type="Task">${taskId}</urn:obj>
+        </urn:objectSet>
+      </urn:specSet>
+    </urn:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const data = await this.withRetry(() => this.soapRequest(xml), 'TaskStatus');
+    return this.parseTaskStatus(data);
+  }
+
+  async waitForTask(taskId: string, timeoutMs = 10 * 60 * 1000): Promise<{
+    status: 'success' | 'error';
+    progress: number;
+    errorMessage?: string;
+    resultId?: string;
+  }> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const status = await this.getTaskStatus(taskId);
+      if (status.status === 'success' || status.status === 'error') {
+        return {
+          ...status,
+          status: status.status
+        };
+      }
+      await this.sleep(3000);
+    }
+    throw new Error(`Task ${taskId} timed out`);
   }
 
   async listVMs() {
