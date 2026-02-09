@@ -490,176 +490,205 @@ async function deployVmItem(params: {
 }
 
 export async function executeDeployment(requestId: number, options: ExecuteDeploymentOptions = {}) {
-  const requestRes = await pool.query(
-    `SELECT rr.*, u.id AS user_id, u.username AS user_name, p.name AS project_name
-     FROM resource_requests rr
-     JOIN users u ON rr.user_id = u.id
-     LEFT JOIN projects p ON rr.project_id = p.id
-     WHERE rr.id = $1`,
-    [requestId]
-  );
-  const request = requestRes.rows[0];
-  if (!request) {
-    throw new Error('Request not found');
-  }
-
-  if (!['approved', 'failed'].includes(request.status)) {
-    throw new Error('Request status conflict');
-  }
-
-  const itemsRes = await pool.query(
-    `SELECT * FROM vm_request_items WHERE request_id = $1 ORDER BY id`,
-    [requestId]
-  );
-  const items = itemsRes.rows;
-  if (!items.length) {
-    throw new Error('No VM items to deploy');
-  }
-
-  const configMap = new Map<number, DeploymentVmConfig>();
-  for (const cfg of options.vm_configs || []) {
-    configMap.set(cfg.vm_item_id, cfg);
-  }
-
-  const vcenterVMs = await vsphere.listVMs();
-  const existingNames = new Set((vcenterVMs || []).map((vm: any) => String(vm.name || '').toLowerCase()));
-  const vmNameSet = new Set<string>();
-  for (const item of items) {
-    const cfg = configMap.get(item.id);
-    const vmName = cfg?.vm_name || item.vm_name || `${request.request_number}-${item.id}`;
-    const nameKey = vmName.toLowerCase();
-    if (vmNameSet.has(nameKey)) {
-      throw new Error(`Duplicate VM name: ${vmName}`);
-    }
-    if (existingNames.has(nameKey)) {
-      throw new Error(`VM name already exists: ${vmName}`);
-    }
-    vmNameSet.add(nameKey);
-
-    const templateName = cfg?.template_name || item.template_name;
-    if (!templateName) {
-      throw new Error(`Template name missing for VM item ${item.id}`);
-    }
-    const templateExists = (vcenterVMs || []).some((vm: any) => String(vm.name || '') === templateName);
-    if (!templateExists) {
-      throw new Error(`Template not found: ${templateName}`);
+  let request: any;
+  try {
+    const requestRes = await pool.query(
+      `SELECT rr.*, u.id AS user_id, u.username AS user_name, p.name AS project_name
+       FROM resource_requests rr
+       JOIN users u ON rr.user_id = u.id
+       LEFT JOIN projects p ON rr.project_id = p.id
+       WHERE rr.id = $1`,
+      [requestId]
+    );
+    request = requestRes.rows[0];
+    if (!request) {
+      throw new Error('Request not found');
     }
 
-    if (item.requires_gpu) {
-      const ok = await vsphere.validateGPUAvailability(item.gpu_model, item.gpu_count || 0);
-      if (!ok) {
-        throw new Error(`Insufficient GPU availability for ${item.gpu_model}`);
+    if (!['approved', 'failed'].includes(request.status)) {
+      throw new Error('Request status conflict');
+    }
+
+    const itemsRes = await pool.query(
+      `SELECT * FROM vm_request_items WHERE request_id = $1 ORDER BY id`,
+      [requestId]
+    );
+    const items = itemsRes.rows;
+    if (!items.length) {
+      throw new Error('No VM items to deploy');
+    }
+
+    const configMap = new Map<number, DeploymentVmConfig>();
+    for (const cfg of options.vm_configs || []) {
+      configMap.set(cfg.vm_item_id, cfg);
+    }
+
+    const vcenterVMs = await vsphere.listVMs();
+    const existingNames = new Set((vcenterVMs || []).map((vm: any) => String(vm.name || '').toLowerCase()));
+    const vmNameSet = new Set<string>();
+    for (const item of items) {
+      const cfg = configMap.get(item.id);
+      const vmName = cfg?.vm_name || item.vm_name || `${request.request_number}-${item.id}`;
+      const nameKey = vmName.toLowerCase();
+      if (vmNameSet.has(nameKey)) {
+        throw new Error(`Duplicate VM name: ${vmName}`);
+      }
+      if (existingNames.has(nameKey)) {
+        throw new Error(`VM name already exists: ${vmName}`);
+      }
+      vmNameSet.add(nameKey);
+
+      const templateName = cfg?.template_name || item.template_name;
+      if (!templateName) {
+        throw new Error(`Template name missing for VM item ${item.id}`);
+      }
+      const templateExists = (vcenterVMs || []).some((vm: any) => String(vm.name || '') === templateName);
+      if (!templateExists) {
+        throw new Error(`Template not found: ${templateName}`);
+      }
+
+      if (item.requires_gpu) {
+        const ok = await vsphere.validateGPUAvailability(item.gpu_model, item.gpu_count || 0);
+        if (!ok) {
+          throw new Error(`Insufficient GPU availability for ${item.gpu_model}`);
+        }
       }
     }
-  }
 
-  const networkConfig = await getNetworkConfig(request.environment);
-  if (!networkConfig) {
-    throw new Error(`Network config not found for ${request.environment}`);
-  }
+    const networkConfig = await getNetworkConfig(request.environment);
+    if (!networkConfig) {
+      throw new Error(`Network config not found for ${request.environment}`);
+    }
 
-  const updateRes = await pool.query(
-    `UPDATE resource_requests
-     SET status = 'deploying', updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1 AND status IN ('approved', 'failed')
-     RETURNING id`,
-    [requestId]
-  );
-  if (!updateRes.rows[0]) {
-    throw new Error('Request status conflict');
-  }
+    const updateRes = await pool.query(
+      `UPDATE resource_requests
+       SET status = 'deploying', updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND status IN ('approved', 'failed')
+       RETURNING id`,
+      [requestId]
+    );
+    if (!updateRes.rows[0]) {
+      throw new Error('Request status conflict');
+    }
 
-  await pool.query(
-    `UPDATE vm_request_items
-     SET deployment_status = 'deploying',
-         deployment_error = NULL
-     WHERE request_id = $1`,
-    [requestId]
-  );
+    await pool.query(
+      `UPDATE vm_request_items
+       SET deployment_status = 'deploying',
+           deployment_error = NULL
+       WHERE request_id = $1`,
+      [requestId]
+    );
 
-  await logDeployment({
-    requestId,
-    level: 'info',
-    message: 'Deployment started',
-    details: { vmCount: items.length },
-    operation: 'start',
-    operatorId: options.operatorId
-  });
+    await logDeployment({
+      requestId,
+      level: 'info',
+      message: 'Deployment started',
+      details: { vmCount: items.length },
+      operation: 'start',
+      operatorId: options.operatorId
+    });
 
-  let allSucceeded = true;
-  for (const item of items) {
-    try {
-      await deployVmItem({
-        request,
-        item,
-        config: configMap.get(item.id),
+    let allSucceeded = true;
+    for (const item of items) {
+      try {
+        await deployVmItem({
+          request,
+          item,
+          config: configMap.get(item.id),
+          operatorId: options.operatorId
+        });
+      } catch (err: any) {
+        allSucceeded = false;
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        await pool.query(
+          `UPDATE vm_request_items
+           SET deployment_status = 'failed',
+               deployment_error = $2
+           WHERE id = $1`,
+          [item.id, errorMessage]
+        );
+        await logDeployment({
+          requestId,
+          vmItemId: item.id,
+          level: 'error',
+          message: 'Deployment failed',
+          details: { error: errorMessage },
+          operation: 'error',
+          operatorId: options.operatorId
+        });
+        await pool.query(
+          `UPDATE vm_request_items
+           SET deployment_status = 'failed',
+               deployment_error = COALESCE(deployment_error, 'Deployment aborted')
+           WHERE request_id = $1 AND deployment_status = 'deploying'`,
+          [requestId]
+        );
+        break;
+      }
+    }
+
+    if (allSucceeded) {
+      await pool.query(
+        `UPDATE resource_requests
+         SET status = 'deployed',
+             deployed_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [requestId]
+      );
+      await logDeployment({
+        requestId,
+        level: 'info',
+        message: 'Deployment completed',
+        operation: 'complete',
         operatorId: options.operatorId
       });
-    } catch (err: any) {
-      allSucceeded = false;
-      const errorMessage = err instanceof Error ? err.message : String(err);
+    } else {
+      await pool.query(
+        `UPDATE resource_requests
+         SET status = 'failed'
+         WHERE id = $1`,
+        [requestId]
+      );
+      await logDeployment({
+        requestId,
+        level: 'error',
+        message: 'Deployment marked as failed',
+        operation: 'failed',
+        operatorId: options.operatorId
+      });
+    }
+
+    return {
+      requestId,
+      status: allSucceeded ? 'deployed' : 'failed'
+    };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (request && ['approved', 'failed', 'deploying'].includes(request.status)) {
+      await pool.query(
+        `UPDATE resource_requests
+         SET status = 'failed'
+         WHERE id = $1 AND status IN ('approved', 'deploying', 'failed')`,
+        [requestId]
+      );
       await pool.query(
         `UPDATE vm_request_items
          SET deployment_status = 'failed',
              deployment_error = $2
-         WHERE id = $1`,
-        [item.id, errorMessage]
+         WHERE request_id = $1 AND deployment_status <> 'deployed'`,
+        [requestId, errorMessage]
       );
       await logDeployment({
         requestId,
-        vmItemId: item.id,
         level: 'error',
-        message: 'Deployment failed',
+        message: 'Deployment preflight failed',
         details: { error: errorMessage },
-        operation: 'error',
+        operation: 'preflight',
         operatorId: options.operatorId
       });
-      await pool.query(
-        `UPDATE vm_request_items
-         SET deployment_status = 'failed',
-             deployment_error = COALESCE(deployment_error, 'Deployment aborted')
-         WHERE request_id = $1 AND deployment_status = 'deploying'`,
-        [requestId]
-      );
-      break;
     }
+    throw err;
   }
-
-  if (allSucceeded) {
-    await pool.query(
-      `UPDATE resource_requests
-       SET status = 'deployed',
-           deployed_at = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      [requestId]
-    );
-    await logDeployment({
-      requestId,
-      level: 'info',
-      message: 'Deployment completed',
-      operation: 'complete',
-      operatorId: options.operatorId
-    });
-  } else {
-    await pool.query(
-      `UPDATE resource_requests
-       SET status = 'failed'
-       WHERE id = $1`,
-      [requestId]
-    );
-    await logDeployment({
-      requestId,
-      level: 'error',
-      message: 'Deployment marked as failed',
-      operation: 'failed',
-      operatorId: options.operatorId
-    });
-  }
-
-  return {
-    requestId,
-    status: allSucceeded ? 'deployed' : 'failed'
-  };
 }
 
 export async function monitorDeploymentTimeouts() {

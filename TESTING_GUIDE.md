@@ -87,19 +87,12 @@ createdb vmware_tenant
 psql -U postgres -c "CREATE DATABASE vmware_tenant;"
 ```
 
-2. Run migrations in order:
+2. Initialize the database schema (development phase):
 ```bash
-psql -U postgres -d vmware_tenant -f migrations/001_add_project_code.sql
-psql -U postgres -d vmware_tenant -f migrations/002_add_vm_metadata.sql
-psql -U postgres -d vmware_tenant -f migrations/003_remove_vcenter_folder_path.sql
-psql -U postgres -d vmware_tenant -f migrations/004_resource_requests.sql
-psql -U postgres -d vmware_tenant -f migrations/005_update_gpu_inventory_status.sql
+psql -U postgres -d vmware_tenant -f init.sql
 ```
 
-**Note:** Migration 004 includes seeded network pools:
-- Development: 10.0.102.0/24 (IPs: 10.0.102.10-250)
-- Testing: 10.0.101.0/24 (IPs: 10.0.101.10-250)
-- Production: 10.0.100.0/24 (IPs: 10.0.100.10-250)
+This initializes the core tables and seeds the default admin account plus pricing data. Add any extra test data manually as needed for feature testing.
 
 ### 2.3 Install Dependencies
 

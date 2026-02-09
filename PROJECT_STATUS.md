@@ -47,8 +47,6 @@ VMware tenant/
 │   │       └── ...               # 其他页面
 │   ├── Dockerfile
 │   └── nginx.conf
-├── migrations/
-│   └── 001_daily_billing.sql     # 每日账单迁移脚本（新增）
 ├── docker-compose.yml
 ├── init.sql                      # 数据库初始化
 └── .env.example                  # 环境变量模板
