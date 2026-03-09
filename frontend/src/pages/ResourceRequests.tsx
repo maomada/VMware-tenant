@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, message, Space, Tabs, Input, Tag, Popconfirm } from 'antd';
 import { Link } from 'react-router-dom';
+import { FormOutlined, DeleteOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons';
 import { resourceRequests } from '../api';
 
-const statusColors: Record<string, string> = {
-  pending: 'orange',
-  approved: 'green',
-  deploying: 'blue',
-  deployed: 'green',
-  rejected: 'red',
-  failed: 'red'
+const statusColors: Record<string, { bg: string, color: string }> = {
+  pending: { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' },
+  approved: { bg: 'rgba(16, 185, 129, 0.15)', color: '#10b981' },
+  deploying: { bg: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' },
+  deployed: { bg: 'rgba(16, 185, 129, 0.15)', color: '#10b981' },
+  rejected: { bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' },
+  failed: { bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }
 };
 
 export default function ResourceRequests() {
@@ -56,24 +57,82 @@ export default function ResourceRequests() {
   };
 
   const columns = [
-    { title: 'Request #', dataIndex: 'request_number' },
-    { title: 'Purpose', dataIndex: 'purpose' },
-    { title: 'Environment', dataIndex: 'environment' },
-    { title: 'VM Count', dataIndex: 'vm_count' },
+    { 
+      title: 'Request #', 
+      dataIndex: 'request_number',
+      render: (v: string) => (
+        <code style={{ 
+          background: 'rgba(0, 212, 255, 0.1)', 
+          padding: '2px 8px', 
+          borderRadius: 4, 
+          color: '#00d4ff',
+          fontFamily: "'IBM Plex Mono', monospace",
+          fontSize: 12
+        }}>{v}</code>
+      )
+    },
+    { title: 'Purpose', dataIndex: 'purpose', ellipsis: true },
+    { title: 'Environment', dataIndex: 'environment', render: (v: string) => (
+      <Tag style={{ 
+        background: 'rgba(139, 92, 246, 0.15)', 
+        border: 'none', 
+        color: '#8b5cf6' 
+      }}>{v.toUpperCase()}</Tag>
+    )},
+    { title: 'VM Count', dataIndex: 'vm_count', render: (v: number) => (
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{v}</span>
+    )},
     {
       title: 'Status',
       dataIndex: 'status',
-      render: (v: string) => <Tag color={statusColors[v] || 'default'}>{v}</Tag>
+      render: (v: string) => {
+        const style = statusColors[v] || { bg: 'rgba(100, 116, 139, 0.15)', color: '#94a3b8' };
+        return (
+          <Tag style={{ 
+            background: style.bg, 
+            border: 'none', 
+            color: style.color 
+          }}>
+            {v.toUpperCase()}
+          </Tag>
+        );
+      }
     },
-    { title: 'Created At', dataIndex: 'created_at', render: (v: string) => new Date(v).toLocaleString() },
+    { 
+      title: 'Created At', 
+      dataIndex: 'created_at', 
+      render: (v: string) => (
+        <span style={{ color: '#94a3b8', fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>
+          {new Date(v).toLocaleString()}
+        </span>
+      )
+    },
     {
       title: 'Actions',
       render: (_: any, record: any) => (
-        <Space>
-          <Link to={`/resource-requests/${record.id}`}>View</Link>
+        <Space size="small">
+          <Link to={`/resource-requests/${record.id}`}>
+            <Button 
+              size="small" 
+              icon={<EyeOutlined />}
+              style={{ 
+                background: 'rgba(0, 212, 255, 0.1)',
+                borderColor: 'rgba(0, 212, 255, 0.3)',
+                color: '#00d4ff'
+              }}
+            >
+              查看
+            </Button>
+          </Link>
           {record.status === 'pending' && (
             <Popconfirm title="Delete this request?" onConfirm={() => onDelete(record.id)}>
-              <Button size="small" danger>Delete</Button>
+              <Button 
+                size="small" 
+                danger
+                icon={<DeleteOutlined />}
+              >
+                删除
+              </Button>
             </Popconfirm>
           )}
         </Space>
@@ -91,9 +150,23 @@ export default function ResourceRequests() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <div className="page-title">
+        <FormOutlined style={{ color: '#8b5cf6' }} />
+        资源申请
+      </div>
+      
+      <Space style={{ marginBottom: 24 }}>
         <Link to="/resource-requests/create">
-          <Button type="primary">Create Request</Button>
+          <Button 
+            type="primary" 
+            icon={<PlusOutlined />}
+            style={{ 
+              background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)',
+              border: 'none'
+            }}
+          >
+            创建申请
+          </Button>
         </Link>
         <Input.Search
           placeholder="Search by request number or purpose"
@@ -106,11 +179,14 @@ export default function ResourceRequests() {
           style={{ width: 320 }}
         />
       </Space>
+      
       <Tabs
         activeKey={status || 'all'}
         onChange={(key) => setStatus(key === 'all' ? undefined : key)}
         items={tabItems}
+        style={{ marginBottom: 24 }}
       />
+      
       <Table
         columns={columns}
         dataSource={data}
@@ -123,6 +199,7 @@ export default function ResourceRequests() {
           showSizeChanger: true
         }}
         onChange={(pager) => load(pager.current || 1, pager.pageSize || pagination.pageSize, search, status)}
+        scroll={{ x: 1000 }}
       />
     </div>
   );

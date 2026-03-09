@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Form, Input, Button, Card, message } from 'antd';
-import { MailOutlined, LockOutlined } from '@ant-design/icons';
+import { Form, Input, Button, message, Divider } from 'antd';
+import { MailOutlined, LockOutlined, RightOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useAuth } from '../AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 
@@ -21,23 +21,80 @@ export default function Login() {
   };
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f0f2f5' }}>
-      <Card title="VMware 租户管理系统" style={{ width: 400 }}>
-        <Form onFinish={onFinish}>
-          <Form.Item name="email" rules={[{ required: true, type: 'email', message: '请输入邮箱' }]}>
-            <Input prefix={<MailOutlined />} placeholder="邮箱" />
+    <div className="auth-container bg-grid">
+      <div className="auth-card">
+        <div className="auth-logo">
+          <ThunderboltOutlined style={{ fontSize: 48, color: '#00d4ff', marginBottom: 16 }} />
+          <h1>VMWARE<span style={{ color: '#3b82f6' }}>TENANT</span></h1>
+          <p>MULTI-TENANT CLOUD MANAGEMENT</p>
+        </div>
+
+        <Form
+          onFinish={onFinish}
+          layout="vertical"
+          size="large"
+          requiredMark={false}
+        >
+          <Form.Item 
+            name="email" 
+            rules={[
+              { required: true, message: '请输入邮箱' },
+              { type: 'email', message: '请输入有效的邮箱地址' }
+            ]}
+          >
+            <Input 
+              prefix={<MailOutlined />} 
+              placeholder="邮箱地址"
+              autoComplete="email"
+            />
           </Form.Item>
-          <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
-            <Input.Password prefix={<LockOutlined />} placeholder="密码" />
+          
+          <Form.Item 
+            name="password" 
+            rules={[{ required: true, message: '请输入密码' }]}
+          >
+            <Input.Password 
+              prefix={<LockOutlined />} 
+              placeholder="密码"
+              autoComplete="current-password"
+            />
           </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading} block>登录</Button>
+
+          <Form.Item style={{ marginBottom: 16 }}>
+            <Button 
+              type="primary" 
+              htmlType="submit" 
+              loading={loading} 
+              block
+              icon={<RightOutlined />}
+              iconPosition="end"
+            >
+              {loading ? '登录中...' : '登 录'}
+            </Button>
           </Form.Item>
-          <div style={{ textAlign: 'center' }}>
-            <Link to="/register">没有账号？立即注册</Link>
-          </div>
         </Form>
-      </Card>
+
+        <Divider className="auth-divider">
+          <span>SECURE ACCESS</span>
+        </Divider>
+
+        <div style={{ textAlign: 'center', marginTop: 24 }}>
+          <span style={{ color: '#64748b', fontSize: 14 }}>
+            还没有账号？ 
+            <Link 
+              to="/register" 
+              style={{ 
+                color: '#00d4ff', 
+                marginLeft: 8,
+                fontWeight: 600,
+                transition: 'all 0.2s'
+              }}
+            >
+              立即注册 <RightOutlined style={{ fontSize: 12 }} />
+            </Link>
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

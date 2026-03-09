@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Tag, message, Space, Select } from 'antd';
-import { PoweroffOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { PoweroffOutlined, PlayCircleOutlined, DesktopOutlined } from '@ant-design/icons';
 import { vms, projects } from '../api';
 
 export default function VMs() {
@@ -47,33 +47,135 @@ export default function VMs() {
   const formatDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : '-');
 
   const columns = [
-    { title: '名称', dataIndex: 'name' },
+    { 
+      title: '名称', 
+      dataIndex: 'name',
+      render: (v: string) => (
+        <Space>
+          <DesktopOutlined style={{ color: '#00d4ff' }} />
+          <span style={{ fontWeight: 500 }}>{v}</span>
+        </Space>
+      )
+    },
     {
       title: '项目',
       dataIndex: 'project_name',
       render: (_: any, record: any) =>
-        record.project_code ? `${record.project_name} (${record.project_code})` : record.project_name
+        record.project_code ? (
+          <code style={{ 
+            background: 'rgba(0, 212, 255, 0.1)', 
+            padding: '2px 8px', 
+            borderRadius: 4, 
+            color: '#00d4ff',
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: 11
+          }}>
+            {record.project_name} ({record.project_code})
+          </code>
+        ) : record.project_name
     },
-    { title: 'CPU', dataIndex: 'cpu_cores', render: (v: number) => `${v} 核` },
-    { title: '内存', dataIndex: 'memory_gb', render: (v: number) => `${v} GB` },
-    { title: '存储', dataIndex: 'storage_gb', render: (v: number) => `${v} GB` },
-    { title: 'GPU数量', dataIndex: 'gpu_count' },
-    { title: 'GPU型号', dataIndex: 'gpu_type', render: (v: string) => v || '-' },
-    { title: '创建时间', dataIndex: 'create_time', render: (v: string) => formatDateTime(v) },
-    { title: '结束时间', dataIndex: 'end_time', render: (v: string) => formatDateTime(v) },
-    { title: '所有者', dataIndex: 'owner', render: (v: string) => v || '-' },
-    {
-      title: '状态', dataIndex: 'status', render: (v: string) => (
-        <Tag color={v === 'POWERED_ON' ? 'green' : v === 'POWERED_OFF' ? 'red' : 'default'}>{v}</Tag>
+    { 
+      title: 'CPU', 
+      dataIndex: 'cpu_cores', 
+      render: (v: number) => (
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{v} 核</span>
       )
     },
+    { 
+      title: '内存', 
+      dataIndex: 'memory_gb', 
+      render: (v: number) => (
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{v} GB</span>
+      )
+    },
+    { 
+      title: '存储', 
+      dataIndex: 'storage_gb', 
+      render: (v: number) => (
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{v} GB</span>
+      )
+    },
+    { 
+      title: 'GPU数量', 
+      dataIndex: 'gpu_count',
+      render: (v: number) => v > 0 ? (
+        <Tag style={{ 
+          background: 'rgba(139, 92, 246, 0.15)', 
+          border: 'none', 
+          color: '#8b5cf6' 
+        }}>
+          {v}
+        </Tag>
+      ) : '-'
+    },
+    { title: 'GPU型号', dataIndex: 'gpu_type', render: (v: string) => v || '-' },
+    { 
+      title: '创建时间', 
+      dataIndex: 'create_time', 
+      render: (v: string) => (
+        <span style={{ color: '#94a3b8', fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>
+          {formatDateTime(v)}
+        </span>
+      )
+    },
+    { 
+      title: '结束时间', 
+      dataIndex: 'end_time', 
+      render: (v: string) => (
+        <span style={{ color: '#94a3b8', fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>
+          {formatDateTime(v)}
+        </span>
+      )
+    },
+    { title: '所有者', dataIndex: 'owner', render: (v: string) => v || '-' },
     {
-      title: '操作', render: (_: any, record: any) => (
-        <Space>
-          <Button size="small" icon={<PlayCircleOutlined />} onClick={() => powerOn(record.id)} disabled={record.status === 'POWERED_ON'}>
+      title: '状态', 
+      dataIndex: 'status', 
+      render: (v: string) => {
+        const colors: Record<string, { bg: string, color: string }> = {
+          'POWERED_ON': { bg: 'rgba(16, 185, 129, 0.15)', color: '#10b981' },
+          'POWERED_OFF': { bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }
+        };
+        const style = colors[v] || { bg: 'rgba(100, 116, 139, 0.15)', color: '#94a3b8' };
+        return (
+          <Tag style={{ 
+            background: style.bg, 
+            border: 'none', 
+            color: style.color 
+          }}>
+            {v}
+          </Tag>
+        );
+      }
+    },
+    {
+      title: '操作', 
+      render: (_: any, record: any) => (
+        <Space size="small">
+          <Button 
+            size="small" 
+            icon={<PlayCircleOutlined />} 
+            onClick={() => powerOn(record.id)} 
+            disabled={record.status === 'POWERED_ON'}
+            style={{ 
+              background: record.status !== 'POWERED_ON' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+              borderColor: record.status !== 'POWERED_ON' ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-color)',
+              color: record.status !== 'POWERED_ON' ? '#10b981' : 'var(--text-muted)'
+            }}
+          >
             开机
           </Button>
-          <Button size="small" icon={<PoweroffOutlined />} onClick={() => powerOff(record.id)} disabled={record.status === 'POWERED_OFF'}>
+          <Button 
+            size="small" 
+            icon={<PoweroffOutlined />} 
+            onClick={() => powerOff(record.id)} 
+            disabled={record.status === 'POWERED_OFF'}
+            style={{ 
+              background: record.status !== 'POWERED_OFF' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+              borderColor: record.status !== 'POWERED_OFF' ? 'rgba(239, 68, 68, 0.3)' : 'var(--border-color)',
+              color: record.status !== 'POWERED_OFF' ? '#ef4444' : 'var(--text-muted)'
+            }}
+          >
             关机
           </Button>
         </Space>
@@ -83,9 +185,14 @@ export default function VMs() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
+      <div className="page-title">
+        <DesktopOutlined style={{ color: '#00d4ff' }} />
+        虚拟机管理
+      </div>
+      
+      <div style={{ marginBottom: 24 }}>
         <Select
-          style={{ width: 200 }}
+          style={{ width: 280 }}
           placeholder="筛选项目"
           allowClear
           value={selectedProject}
@@ -96,7 +203,14 @@ export default function VMs() {
           }))}
         />
       </div>
-      <Table columns={columns} dataSource={data} rowKey="id" loading={loading} />
+      
+      <Table 
+        columns={columns} 
+        dataSource={data} 
+        rowKey="id" 
+        loading={loading}
+        scroll={{ x: 1200 }}
+      />
     </div>
   );
 }

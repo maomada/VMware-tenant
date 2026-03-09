@@ -44,8 +44,6 @@ export const vms = {
 export const dailyBilling = {
   list: (params?: { startDate?: string; endDate?: string; projectId?: number }) =>
     api.get('/daily-billing/daily', { params }),
-  summary: (params?: { startDate?: string; endDate?: string; projectId?: number }) =>
-    api.get('/daily-billing/summary', { params }),
   stats: (params: { dimension: 'day' | 'month'; startDate?: string; endDate?: string; projectId?: number }) =>
     api.get('/daily-billing/stats', { params }),
   exportUrl: (params?: { startDate?: string; endDate?: string; projectId?: number }) => {

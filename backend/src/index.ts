@@ -5,13 +5,13 @@ import cron from 'node-cron';
 import authRoutes from './routes/auth';
 import projectRoutes from './routes/project';
 import vmRoutes from './routes/vm';
-import billingRoutes from './routes/billing';
+
 import dailyBillingRoutes from './routes/dailyBilling';
 import adminRoutes from './routes/admin';
 import resourceRequestRoutes, { adminRouter as adminResourceRequestRoutes } from './routes/resourceRequest';
 import gpuRoutes from './routes/gpu';
 import networkPoolRoutes from './routes/network';
-import { recordUsage, syncVMConfigs } from './services/billing';
+
 import { generateDailyBills, cleanupOldBills, syncVMConfigsWithBinding } from './services/dailyBilling';
 import { syncGPUInventory } from './services/gpu';
 import { monitorDeploymentTimeouts } from './services/deployment';
@@ -29,7 +29,7 @@ export const asyncHandler = (fn: (req: Request, res: Response, next: NextFunctio
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/vms', vmRoutes);
-app.use('/api/billing', billingRoutes);
+
 app.use('/api/daily-billing', dailyBillingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/resource-requests', resourceRequestRoutes);
@@ -41,16 +41,6 @@ app.use('/api/admin/network-pools', networkPoolRoutes);
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Error:', err);
   res.status(500).json({ error: err.message || '服务器内部错误' });
-});
-
-// 每小时记录资源使用
-cron.schedule('0 * * * *', async () => {
-  try {
-    console.log('[Cron] Recording usage...');
-    await recordUsage();
-  } catch (err) {
-    console.error('[Cron] recordUsage error:', err);
-  }
 });
 
 // Every 10 minutes sync VM configs with binding
@@ -93,16 +83,6 @@ cron.schedule('5 0 * * *', async () => {
     await generateDailyBills();
   } catch (err) {
     console.error('[Cron] generateDailyBills error:', err);
-  }
-});
-
-// 每天 23:30 同步 VM 配置
-cron.schedule('30 23 * * *', async () => {
-  try {
-    console.log('[Cron] Syncing VM configs...');
-    await syncVMConfigs();
-  } catch (err) {
-    console.error('[Cron] syncVMConfigs error:', err);
   }
 });
 

@@ -6,7 +6,6 @@ import {
   cleanupOldBills,
   syncVMConfigsWithBinding,
   getDailyBills,
-  getBillSummary,
   getStatsByDimension
 } from '../services/dailyBilling';
 
@@ -25,21 +24,6 @@ router.get('/daily', auth, async (req: AuthRequest, res: Response) => {
   });
 
   res.json(bills);
-});
-
-// 获取账单汇总
-router.get('/summary', auth, async (req: AuthRequest, res: Response) => {
-  const isAdmin = req.user?.role === 'admin';
-  const { startDate, endDate, projectId } = req.query;
-
-  const summary = await getBillSummary({
-    projectId: projectId ? parseInt(projectId as string) : undefined,
-    startDate: startDate as string,
-    endDate: endDate as string,
-    userId: isAdmin ? undefined : req.user?.id
-  });
-
-  res.json(summary);
 });
 
 // 获取账单统计（按日/月/季度聚合）

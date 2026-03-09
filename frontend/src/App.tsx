@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, Link, Outlet } from 'react-router-dom';
 import { Layout, Menu, Button, Spin } from 'antd';
-import { UserOutlined, DesktopOutlined, DollarOutlined, FolderOutlined, LogoutOutlined, SettingOutlined, FormOutlined, HddOutlined, GlobalOutlined } from '@ant-design/icons';
+import { UserOutlined, DesktopOutlined, DollarOutlined, FolderOutlined, LogoutOutlined, SettingOutlined, FormOutlined, HddOutlined, GlobalOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { AuthProvider, useAuth } from './AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -25,13 +25,13 @@ const { Header, Sider, Content } = Layout;
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return <Spin style={{ display: 'flex', justifyContent: 'center', marginTop: 200 }} />;
+  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#0a0e17' }}><Spin size="large" /></div>;
   return user ? <>{children}</> : <Navigate to="/login" />;
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return <Spin style={{ display: 'flex', justifyContent: 'center', marginTop: 200 }} />;
+  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#0a0e17' }}><Spin size="large" /></div>;
   if (!user) return <Navigate to="/login" />;
   if (user.role !== 'admin') return <Navigate to="/" />;
   return <>{children}</>;
@@ -50,17 +50,74 @@ function UserLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider>
-        <div style={{ color: '#fff', padding: 16, fontSize: 16, fontWeight: 'bold' }}>VMware 租户管理</div>
-        <Menu theme="dark" mode="inline" items={menuItems} />
+      <Sider width={220} breakpoint="lg" collapsedWidth={80}>
+        <div style={{ 
+          color: '#fff', 
+          padding: '20px 16px', 
+          fontSize: 18, 
+          fontWeight: 'bold',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          borderBottom: '1px solid #2d3748'
+        }}>
+          <ThunderboltOutlined style={{ color: '#00d4ff', fontSize: 24 }} />
+          <span style={{ 
+            fontFamily: "'Rajdhani', sans-serif",
+            letterSpacing: '1px',
+            background: 'linear-gradient(135deg, #00d4ff, #3b82f6)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent'
+          }}>
+            VMWARE
+          </span>
+        </div>
+        <Menu 
+          theme="dark" 
+          mode="inline" 
+          items={menuItems} 
+          style={{ borderRight: 0, marginTop: 8 }}
+        />
       </Sider>
       <Layout>
-        <Header style={{ background: '#fff', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <span style={{ marginRight: 16 }}><UserOutlined /> {user?.email}</span>
-          <Button icon={<LogoutOutlined />} onClick={logout}>退出</Button>
+        <Header style={{ 
+          background: '#111827', 
+          padding: '0 24px', 
+          display: 'flex', 
+          justifyContent: 'flex-end', 
+          alignItems: 'center',
+          borderBottom: '1px solid #2d3748'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 8,
+              padding: '8px 16px',
+              background: 'rgba(0, 212, 255, 0.1)',
+              borderRadius: 8,
+              border: '1px solid rgba(0, 212, 255, 0.2)'
+            }}>
+              <UserOutlined style={{ color: '#00d4ff' }} />
+              <span style={{ color: '#f1f5f9', fontSize: 14 }}>{user?.email}</span>
+            </div>
+            <Button 
+              icon={<LogoutOutlined />} 
+              onClick={logout}
+              style={{ 
+                background: 'transparent',
+                borderColor: '#2d3748',
+                color: '#94a3b8'
+              }}
+            >
+              退出
+            </Button>
+          </div>
         </Header>
-        <Content style={{ margin: 24, padding: 24, background: '#fff' }}>
-          <Outlet />
+        <Content style={{ margin: 24, padding: 24, background: '#0a0e17', minHeight: 280 }}>
+          <div className="bg-grid" style={{ minHeight: '100%', padding: '0 0 24px 0' }}>
+            <Outlet />
+          </div>
         </Content>
       </Layout>
     </Layout>
@@ -83,17 +140,80 @@ function AdminLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider>
-        <div style={{ color: '#fff', padding: 16, fontSize: 16, fontWeight: 'bold' }}>管理后台</div>
-        <Menu theme="dark" mode="inline" items={menuItems} />
+      <Sider width={220} breakpoint="lg" collapsedWidth={80}>
+        <div style={{ 
+          color: '#fff', 
+          padding: '20px 16px', 
+          fontSize: 18, 
+          fontWeight: 'bold',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          borderBottom: '1px solid #2d3748'
+        }}>
+          <ThunderboltOutlined style={{ color: '#8b5cf6', fontSize: 24 }} />
+          <span style={{ 
+            fontFamily: "'Rajdhani', sans-serif",
+            letterSpacing: '1px',
+            color: '#8b5cf6'
+          }}>
+            ADMIN
+          </span>
+        </div>
+        <Menu 
+          theme="dark" 
+          mode="inline" 
+          items={menuItems} 
+          style={{ borderRight: 0, marginTop: 8 }}
+        />
       </Sider>
       <Layout>
-        <Header style={{ background: '#fff', padding: '0 16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <span style={{ marginRight: 16 }}><UserOutlined /> {user?.email} (管理员)</span>
-          <Button icon={<LogoutOutlined />} onClick={logout}>退出</Button>
+        <Header style={{ 
+          background: '#111827', 
+          padding: '0 24px', 
+          display: 'flex', 
+          justifyContent: 'flex-end', 
+          alignItems: 'center',
+          borderBottom: '1px solid #2d3748'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 8,
+              padding: '8px 16px',
+              background: 'rgba(139, 92, 246, 0.1)',
+              borderRadius: 8,
+              border: '1px solid rgba(139, 92, 246, 0.2)'
+            }}>
+              <UserOutlined style={{ color: '#8b5cf6' }} />
+              <span style={{ color: '#f1f5f9', fontSize: 14 }}>{user?.email}</span>
+              <span style={{ 
+                color: '#8b5cf6', 
+                fontSize: 11, 
+                padding: '2px 8px', 
+                background: 'rgba(139, 92, 246, 0.2)',
+                borderRadius: 4,
+                fontWeight: 600
+              }}>ADMIN</span>
+            </div>
+            <Button 
+              icon={<LogoutOutlined />} 
+              onClick={logout}
+              style={{ 
+                background: 'transparent',
+                borderColor: '#2d3748',
+                color: '#94a3b8'
+              }}
+            >
+              退出
+            </Button>
+          </div>
         </Header>
-        <Content style={{ margin: 24, padding: 24, background: '#fff' }}>
-          <Outlet />
+        <Content style={{ margin: 24, padding: 24, background: '#0a0e17', minHeight: 280 }}>
+          <div className="bg-grid" style={{ minHeight: '100%', padding: '0 0 24px 0' }}>
+            <Outlet />
+          </div>
         </Content>
       </Layout>
     </Layout>
@@ -123,14 +243,14 @@ export default function App() {
             <Route path="pricing" element={<AdminPricing />} />
             <Route path="projects" element={<AdminProjects />} />
             <Route path="vms" element={<AdminVMs />} />
-          <Route path="gpu-inventory" element={<AdminGPUInventory />} />
-          <Route path="network-pools" element={<AdminNetworkPools />} />
-          <Route path="resource-requests" element={<AdminResourceRequests />} />
-          <Route path="resource-requests/:id" element={<AdminResourceRequestDetail />} />
-          <Route path="resource-requests/:id/deployment-logs" element={<DeploymentLogs />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
-  </AuthProvider>
+            <Route path="gpu-inventory" element={<AdminGPUInventory />} />
+            <Route path="network-pools" element={<AdminNetworkPools />} />
+            <Route path="resource-requests" element={<AdminResourceRequests />} />
+            <Route path="resource-requests/:id" element={<AdminResourceRequestDetail />} />
+            <Route path="resource-requests/:id/deployment-logs" element={<DeploymentLogs />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Card, Row, Col, Statistic, message, DatePicker, Select, Space, Tabs } from 'antd';
-import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, ReloadOutlined, DollarOutlined } from '@ant-design/icons';
 import { dailyBilling, projects } from '../api';
 import dayjs from 'dayjs';
 
@@ -115,36 +115,68 @@ export default function DailyBilling() {
 
   const columns = [
     { title: '项目名称', dataIndex: 'project_name', width: 150 },
-    { title: '项目编号', dataIndex: 'project_code', width: 140 },
+    { title: '项目编号', dataIndex: 'project_code', width: 140, render: (v: string) => v ? (
+      <code style={{ 
+        background: 'rgba(0, 212, 255, 0.1)', 
+        padding: '2px 6px', 
+        borderRadius: 4, 
+        color: '#00d4ff',
+        fontFamily: "'IBM Plex Mono', monospace",
+        fontSize: 10
+      }}>{v}</code>
+    ) : '-' },
     { title: '虚机名称', dataIndex: 'vm_name', width: 180 },
-    { title: '虚机ID', dataIndex: 'vcenter_vm_id', width: 120 },
+    { title: '虚机ID', dataIndex: 'vcenter_vm_id', width: 120, render: (v: string) => (
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{v}</span>
+    )},
     {
       title: '计费日期', dataIndex: 'bill_date', width: 120,
-      render: (v: string) => v?.split('T')[0]
+      render: (v: string) => (
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>
+          {v?.split('T')[0]}
+        </span>
+      )
     },
     { title: 'CPU', dataIndex: 'cpu_cores', width: 80 },
     { title: '内存(GB)', dataIndex: 'memory_gb', width: 100 },
     { title: '存储(GB)', dataIndex: 'storage_gb', width: 100 },
     { title: 'GPU', dataIndex: 'gpu_count', width: 80 },
     { title: 'GPU型号', dataIndex: 'gpu_type', width: 150, render: (v: string) => v || '-' },
-    { title: '当日费用', dataIndex: 'daily_cost', width: 100, render: (v: string) => <strong>¥{v}</strong> }
+    { title: '当日费用', dataIndex: 'daily_cost', width: 100, render: (v: string) => (
+      <strong style={{ color: '#10b981', fontFamily: "'IBM Plex Mono', monospace" }}>¥{v}</strong>
+    ) }
   ];
 
   const statsColumns = [
-    { title: '周期', dataIndex: 'period', width: 160 },
-    { title: 'VM数', dataIndex: 'vm_count', width: 120, render: (v: any) => Number(v) },
-    { title: '计费天数', dataIndex: 'bill_days', width: 120, render: (v: any) => Number(v) },
+    { title: '周期', dataIndex: 'period', width: 160, render: (v: string) => (
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{v}</span>
+    ) },
+    { title: 'VM数', dataIndex: 'vm_count', width: 120, render: (v: any) => (
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{Number(v)}</span>
+    ) },
+    { title: '计费天数', dataIndex: 'bill_days', width: 120, render: (v: any) => (
+      <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{Number(v)}</span>
+    ) },
     {
       title: '金额合计',
       dataIndex: 'total_cost',
       width: 160,
-      render: (v: any) => <strong>¥{Number(v || 0).toFixed(2)}</strong>
+      render: (v: any) => (
+        <strong style={{ color: '#10b981', fontFamily: "'IBM Plex Mono', monospace" }}>
+          ¥{Number(v || 0).toFixed(2)}
+        </strong>
+      )
     }
   ];
 
   return (
     <div>
-      <Card style={{ marginBottom: 16 }}>
+      <div className="page-title">
+        <DollarOutlined style={{ color: '#10b981' }} />
+        账单管理
+      </div>
+      
+      <Card style={{ marginBottom: 24, background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
         <Space wrap>
           <RangePicker
             value={dateRange}
@@ -163,10 +195,31 @@ export default function DailyBilling() {
               </Select.Option>
             ))}
           </Select>
-          <Button type="primary" onClick={handleQuery} icon={<ReloadOutlined />}>查询</Button>
-          <Button onClick={handleExport} icon={<DownloadOutlined />}>导出</Button>
+          <Button 
+            type="primary" 
+            onClick={handleQuery} 
+            icon={<ReloadOutlined />}
+            style={{ 
+              background: 'linear-gradient(135deg, #00d4ff, #3b82f6)',
+              border: 'none'
+            }}
+          >
+            查询
+          </Button>
+          <Button 
+            onClick={handleExport} 
+            icon={<DownloadOutlined />}
+          >
+            导出
+          </Button>
           {isAdmin && (
-            <Button type="dashed" onClick={handleGenerate}>生成今日账单</Button>
+            <Button 
+              type="dashed" 
+              onClick={handleGenerate}
+              style={{ borderColor: 'rgba(16, 185, 129, 0.5)', color: '#10b981' }}
+            >
+              生成今日账单
+            </Button>
           )}
         </Space>
       </Card>
@@ -182,10 +235,24 @@ export default function DailyBilling() {
               <>
                 <Row gutter={16} style={{ marginBottom: 24 }}>
                   <Col span={6}>
-                    <Card><Statistic title="账单记录数" value={totalDays} /></Card>
+                    <Card style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                      <Statistic 
+                        title="账单记录数" 
+                        value={totalDays} 
+                        valueStyle={{ color: '#00d4ff' }}
+                      />
+                    </Card>
                   </Col>
                   <Col span={6}>
-                    <Card><Statistic title="总费用" value={totalCost} prefix="¥" precision={2} /></Card>
+                    <Card style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                      <Statistic 
+                        title="总费用" 
+                        value={totalCost} 
+                        prefix="¥" 
+                        precision={2}
+                        valueStyle={{ color: '#10b981' }}
+                      />
+                    </Card>
                   </Col>
                 </Row>
 
@@ -205,7 +272,7 @@ export default function DailyBilling() {
             label: '统计',
             children: (
               <>
-                <Card style={{ marginBottom: 16 }}>
+                <Card style={{ marginBottom: 16, background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
                   <Space wrap>
                     <span>统计维度</span>
                     <Select
@@ -226,13 +293,33 @@ export default function DailyBilling() {
 
                 <Row gutter={16} style={{ marginBottom: 24 }}>
                   <Col span={6}>
-                    <Card><Statistic title="统计周期数" value={stats.length} /></Card>
+                    <Card style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                      <Statistic 
+                        title="统计周期数" 
+                        value={stats.length}
+                        valueStyle={{ color: '#00d4ff' }}
+                      />
+                    </Card>
                   </Col>
                   <Col span={6}>
-                    <Card><Statistic title="计费天数" value={statsTotalDays} /></Card>
+                    <Card style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                      <Statistic 
+                        title="计费天数" 
+                        value={statsTotalDays}
+                        valueStyle={{ color: '#8b5cf6' }}
+                      />
+                    </Card>
                   </Col>
                   <Col span={6}>
-                    <Card><Statistic title="金额合计" value={statsTotalCost} prefix="¥" precision={2} /></Card>
+                    <Card style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                      <Statistic 
+                        title="金额合计" 
+                        value={statsTotalCost} 
+                        prefix="¥" 
+                        precision={2}
+                        valueStyle={{ color: '#10b981' }}
+                      />
+                    </Card>
                   </Col>
                 </Row>
 
