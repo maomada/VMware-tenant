@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Tag, message, Space, Select } from 'antd';
 import { PoweroffOutlined, PlayCircleOutlined, DesktopOutlined } from '@ant-design/icons';
-import { vms, projects } from '../api';
+import { vms, projects, getApiErrorMessage, type Project, type VirtualMachine } from '../api';
 
 export default function VMs() {
-  const [data, setData] = useState([]);
-  const [projectList, setProjectList] = useState<any[]>([]);
+  const [data, setData] = useState<VirtualMachine[]>([]);
+  const [projectList, setProjectList] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<number | undefined>();
   const [loading, setLoading] = useState(false);
 
@@ -15,8 +15,8 @@ export default function VMs() {
       const [vmRes, projRes] = await Promise.all([vms.list(selectedProject), projects.list()]);
       setData(vmRes.data);
       setProjectList(projRes.data);
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '加载失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '加载失败'));
     } finally {
       setLoading(false);
     }
@@ -29,8 +29,8 @@ export default function VMs() {
       await vms.powerOn(id);
       message.success('开机指令已发送');
       load();
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '操作失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '操作失败'));
     }
   };
 
@@ -39,8 +39,8 @@ export default function VMs() {
       await vms.powerOff(id);
       message.success('关机指令已发送');
       load();
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '操作失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '操作失败'));
     }
   };
 
@@ -60,7 +60,7 @@ export default function VMs() {
     {
       title: '项目',
       dataIndex: 'project_name',
-      render: (_: any, record: any) =>
+      render: (_: unknown, record: VirtualMachine) =>
         record.project_code ? (
           <code style={{ 
             background: 'rgba(0, 212, 255, 0.1)', 
@@ -150,7 +150,7 @@ export default function VMs() {
     },
     {
       title: '操作', 
-      render: (_: any, record: any) => (
+      render: (_: unknown, record: VirtualMachine) => (
         <Space size="small">
           <Button 
             size="small" 

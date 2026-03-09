@@ -41,7 +41,8 @@ function UserLayout() {
   const { user, logout } = useAuth();
 
   const menuItems = [
-    { key: 'resource-requests', icon: <FormOutlined />, label: <Link to="/resource-requests">Resource Requests</Link> },
+    { key: 'resource-requests-create', icon: <FormOutlined />, label: <Link to="/resource-requests/create">资源申请</Link> },
+    { key: 'resource-requests', icon: <FormOutlined />, label: <Link to="/resource-requests">我的申请</Link> },
     { key: 'projects', icon: <FolderOutlined />, label: <Link to="/projects">项目</Link> },
     { key: 'vms', icon: <DesktopOutlined />, label: <Link to="/vms">虚拟机</Link> },
     { key: 'billing', icon: <DollarOutlined />, label: <Link to="/billing">账单</Link> },
@@ -128,13 +129,13 @@ function AdminLayout() {
   const { user, logout } = useAuth();
 
   const menuItems = [
-    { key: 'gpu-inventory', icon: <HddOutlined />, label: <Link to="/admin/gpu-inventory">GPU Inventory</Link> },
-    { key: 'network-pools', icon: <GlobalOutlined />, label: <Link to="/admin/network-pools">Network Pools</Link> },
-    { key: 'resource-requests', icon: <FormOutlined />, label: <Link to="/admin/resource-requests">Resource Requests</Link> },
-    { key: 'users', icon: <UserOutlined />, label: <Link to="/admin/users">用户管理</Link> },
-    { key: 'pricing', icon: <DollarOutlined />, label: <Link to="/admin/pricing">价格管理</Link> },
+    { key: 'resource-requests', icon: <FormOutlined />, label: <Link to="/admin/resource-requests">申请审核</Link> },
+    { key: 'gpu-inventory', icon: <HddOutlined />, label: <Link to="/admin/gpu-inventory">GPU资源</Link> },
+    { key: 'network-pools', icon: <GlobalOutlined />, label: <Link to="/admin/network-pools">网络池</Link> },
     { key: 'projects', icon: <FolderOutlined />, label: <Link to="/admin/projects">项目管理</Link> },
     { key: 'vms', icon: <DesktopOutlined />, label: <Link to="/admin/vms">VM管理</Link> },
+    { key: 'users', icon: <UserOutlined />, label: <Link to="/admin/users">用户管理</Link> },
+    { key: 'pricing', icon: <DollarOutlined />, label: <Link to="/admin/pricing">价格管理</Link> },
     { key: 'back', label: <Link to="/">返回用户端</Link> }
   ];
 
@@ -229,7 +230,7 @@ export default function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/verify/:token" element={<VerifyEmail />} />
           <Route path="/" element={<PrivateRoute><UserLayout /></PrivateRoute>}>
-            <Route index element={<Navigate to="/projects" />} />
+            <Route index element={<Navigate to="/resource-requests" />} />
             <Route path="projects" element={<Projects />} />
             <Route path="vms" element={<VMs />} />
             <Route path="billing" element={<DailyBilling />} />
@@ -238,7 +239,7 @@ export default function App() {
             <Route path="resource-requests/:id" element={<ResourceRequestDetail />} />
           </Route>
           <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
-            <Route index element={<Navigate to="/admin/users" />} />
+            <Route index element={<Navigate to="/admin/resource-requests" />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="pricing" element={<AdminPricing />} />
             <Route path="projects" element={<AdminProjects />} />

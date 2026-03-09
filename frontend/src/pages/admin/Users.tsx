@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Tag, message, Space, Popconfirm, Modal, Input } from 'antd';
-import { admin } from '../../api';
+import { admin, getApiErrorMessage, type AdminUser } from '../../api';
 
 export default function AdminUsers() {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [passwordModal, setPasswordModal] = useState<{ id: number; username: string } | null>(null);
   const [newPassword, setNewPassword] = useState('');
@@ -13,8 +13,8 @@ export default function AdminUsers() {
     try {
       const res = await admin.users();
       setData(res.data);
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '加载失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '加载失败'));
     } finally {
       setLoading(false);
     }
@@ -28,8 +28,8 @@ export default function AdminUsers() {
       await admin.updateUserStatus(id, newStatus);
       message.success('状态已更新');
       load();
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '操作失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '操作失败'));
     }
   };
 
@@ -38,8 +38,8 @@ export default function AdminUsers() {
       await admin.deleteUser(id);
       message.success('删除成功');
       load();
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '删除失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '删除失败'));
     }
   };
 
@@ -50,8 +50,8 @@ export default function AdminUsers() {
       message.success('密码已更新');
       setPasswordModal(null);
       setNewPassword('');
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '更新失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '更新失败'));
     }
   };
 
@@ -60,8 +60,8 @@ export default function AdminUsers() {
       await admin.verifyUser(id);
       message.success('用户已验证');
       load();
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '验证失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '验证失败'));
     }
   };
 
@@ -74,7 +74,7 @@ export default function AdminUsers() {
     { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={v === 'active' ? 'green' : 'red'}>{v}</Tag> },
     { title: '创建时间', dataIndex: 'created_at', render: (v: string) => new Date(v).toLocaleString() },
     {
-      title: '操作', render: (_: any, record: any) => record.role !== 'admin' && (
+      title: '操作', render: (_: unknown, record: AdminUser) => record.role !== 'admin' && (
         <Space>
           {!record.email_verified && (
             <Button size="small" type="primary" onClick={() => verifyUser(record.id)}>验证邮箱</Button>

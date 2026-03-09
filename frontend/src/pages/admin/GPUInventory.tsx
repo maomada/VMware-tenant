@@ -1,18 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, message, Select, Tag, Modal, Space } from 'antd';
-import { gpu } from '../../api';
-
-type GPURecord = {
-  id: number;
-  device_id: string;
-  device_name: string;
-  gpu_model: string;
-  host_name: string;
-  host_id: string;
-  status: string;
-  allocated_to_vm?: string | null;
-  last_synced_at?: string | null;
-};
+import { gpu, getApiErrorMessage, type GPURecord, type GpuStatus } from '../../api';
 
 const statusColors: Record<string, string> = {
   available: 'green',
@@ -33,7 +21,7 @@ export default function GPUInventory() {
   const [data, setData] = useState<GPURecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<GpuStatus | ''>('');
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   const load = async (status = statusFilter) => {
@@ -43,8 +31,8 @@ export default function GPUInventory() {
       const payload = res.data || {};
       setData(payload.data || payload || []);
       setLastSyncedAt(payload.last_synced_at || null);
-    } catch (e: any) {
-      message.error(e.response?.data?.error || 'Failed to load GPU inventory');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, 'Failed to load GPU inventory'));
     } finally {
       setLoading(false);
     }
@@ -58,8 +46,8 @@ export default function GPUInventory() {
       await gpu.sync();
       message.success('GPU inventory synced');
       await load();
-    } catch (e: any) {
-      message.error(e.response?.data?.error || 'Sync failed');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, 'Sync failed'));
     } finally {
       setSyncing(false);
     }
@@ -68,7 +56,7 @@ export default function GPUInventory() {
   const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : '-');
 
   const toggleMaintenance = (record: GPURecord) => {
-    const nextStatus = record.status === 'maintenance' ? 'available' : 'maintenance';
+    const nextStatus: 'available' | 'maintenance' = record.status === 'maintenance' ? 'available' : 'maintenance';
     Modal.confirm({
       title: `Set status to ${nextStatus}?`,
       content: `GPU ${record.device_id} (${record.gpu_model}) on ${record.host_name}`,

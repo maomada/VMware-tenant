@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, message, Space, Tabs, Input, Tag, Popconfirm } from 'antd';
+import { Table, Button, message, Space, Tabs, Input, Tag } from 'antd';
 import { Link } from 'react-router-dom';
-import { FormOutlined, DeleteOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons';
-import { resourceRequests } from '../api';
+import { FormOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons';
+import { resourceRequests, getApiErrorMessage, type EnvironmentType, type RequestStatus, type ResourceRequestSummary } from '../api';
+import { formatDateTime, getEnvironmentLabel, getRequestStatusLabel } from '../utils/display';
 
 const statusColors: Record<string, { bg: string, color: string }> = {
   pending: { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' },
@@ -14,9 +15,9 @@ const statusColors: Record<string, { bg: string, color: string }> = {
 };
 
 export default function ResourceRequests() {
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<ResourceRequestSummary[]>([]);
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<string | undefined>();
+  const [status, setStatus] = useState<RequestStatus | undefined>();
   const [search, setSearch] = useState('');
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
 
@@ -35,8 +36,8 @@ export default function ResourceRequests() {
         pageSize,
         total: res.data.pagination?.total || 0
       });
-    } catch (e: any) {
-      message.error(e.response?.data?.error || 'Failed to load requests');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, 'Failed to load requests'));
     } finally {
       setLoading(false);
     }
@@ -45,16 +46,6 @@ export default function ResourceRequests() {
   useEffect(() => {
     load(1, pagination.pageSize, search, status);
   }, [status]);
-
-  const onDelete = async (id: number) => {
-    try {
-      await resourceRequests.delete(id);
-      message.success('Request deleted');
-      load(pagination.current, pagination.pageSize);
-    } catch (e: any) {
-      message.error(e.response?.data?.error || 'Delete failed');
-    }
-  };
 
   const columns = [
     { 
@@ -72,12 +63,12 @@ export default function ResourceRequests() {
       )
     },
     { title: 'Purpose', dataIndex: 'purpose', ellipsis: true },
-    { title: 'Environment', dataIndex: 'environment', render: (v: string) => (
+    { title: 'Environment', dataIndex: 'environment', render: (v: EnvironmentType) => (
       <Tag style={{ 
         background: 'rgba(139, 92, 246, 0.15)', 
         border: 'none', 
         color: '#8b5cf6' 
-      }}>{v.toUpperCase()}</Tag>
+      }}>{getEnvironmentLabel(v)}</Tag>
     )},
     { title: 'VM Count', dataIndex: 'vm_count', render: (v: number) => (
       <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{v}</span>
@@ -85,7 +76,7 @@ export default function ResourceRequests() {
     {
       title: 'Status',
       dataIndex: 'status',
-      render: (v: string) => {
+      render: (v: RequestStatus) => {
         const style = statusColors[v] || { bg: 'rgba(100, 116, 139, 0.15)', color: '#94a3b8' };
         return (
           <Tag style={{ 
@@ -93,7 +84,7 @@ export default function ResourceRequests() {
             border: 'none', 
             color: style.color 
           }}>
-            {v.toUpperCase()}
+            {getRequestStatusLabel(v)}
           </Tag>
         );
       }
@@ -103,13 +94,13 @@ export default function ResourceRequests() {
       dataIndex: 'created_at', 
       render: (v: string) => (
         <span style={{ color: '#94a3b8', fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>
-          {new Date(v).toLocaleString()}
+          {formatDateTime(v)}
         </span>
       )
     },
     {
       title: 'Actions',
-      render: (_: any, record: any) => (
+      render: (_: unknown, record: ResourceRequestSummary) => (
         <Space size="small">
           <Link to={`/resource-requests/${record.id}`}>
             <Button 
@@ -124,35 +115,26 @@ export default function ResourceRequests() {
               查看
             </Button>
           </Link>
-          {record.status === 'pending' && (
-            <Popconfirm title="Delete this request?" onConfirm={() => onDelete(record.id)}>
-              <Button 
-                size="small" 
-                danger
-                icon={<DeleteOutlined />}
-              >
-                删除
-              </Button>
-            </Popconfirm>
-          )}
         </Space>
       )
     }
   ];
 
   const tabItems = [
-    { key: 'all', label: 'All' },
-    { key: 'pending', label: 'Pending' },
-    { key: 'approved', label: 'Approved' },
-    { key: 'deployed', label: 'Deployed' },
-    { key: 'rejected', label: 'Rejected' }
+    { key: 'all', label: '全部' },
+    { key: 'pending', label: '待处理' },
+    { key: 'approved', label: '已批准' },
+    { key: 'deploying', label: '部署中' },
+    { key: 'deployed', label: '已部署' },
+    { key: 'rejected', label: '已驳回' },
+    { key: 'failed', label: '已失败' }
   ];
 
   return (
     <div>
       <div className="page-title">
         <FormOutlined style={{ color: '#8b5cf6' }} />
-        资源申请
+        我的申请
       </div>
       
       <Space style={{ marginBottom: 24 }}>
@@ -178,11 +160,14 @@ export default function ResourceRequests() {
           }}
           style={{ width: 320 }}
         />
+        <Button onClick={() => { setStatus(undefined); setSearch(''); load(1, pagination.pageSize, '', undefined); }}>
+          重置筛选
+        </Button>
       </Space>
       
       <Tabs
         activeKey={status || 'all'}
-        onChange={(key) => setStatus(key === 'all' ? undefined : key)}
+        onChange={(key) => setStatus(key === 'all' ? undefined : (key as RequestStatus))}
         items={tabItems}
         style={{ marginBottom: 24 }}
       />

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, message, Popconfirm, Space, Tag } from 'antd';
 import { PlusOutlined, SyncOutlined, FolderOutlined, DeleteOutlined } from '@ant-design/icons';
-import { projects } from '../api';
+import { projects, getApiErrorMessage, type CreateProjectPayload, type Project } from '../api';
 
 export default function Projects() {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(false);
   const [syncing, setSyncing] = useState<number | null>(null);
@@ -15,8 +15,8 @@ export default function Projects() {
     try {
       const res = await projects.list();
       setData(res.data);
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '加载失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '加载失败'));
     } finally {
       setLoading(false);
     }
@@ -24,7 +24,7 @@ export default function Projects() {
 
   useEffect(() => { load(); }, []);
 
-  const onCreate = async (values: any) => {
+  const onCreate = async (values: CreateProjectPayload) => {
     try {
       await projects.create(values);
       message.success('创建成功');
@@ -35,8 +35,8 @@ export default function Projects() {
         title: '提示',
         content: '项目创建成功！系统将在10分钟内自动同步虚拟机，您也可以稍后手动点击"同步VM"按钮进行同步。',
       });
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '创建失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '创建失败'));
     }
   };
 
@@ -45,8 +45,8 @@ export default function Projects() {
       await projects.delete(id);
       message.success('删除成功');
       load();
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '删除失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '删除失败'));
     }
   };
 
@@ -56,8 +56,8 @@ export default function Projects() {
       const res = await projects.sync(id);
       message.success(`同步成功，共 ${res.data.synced} 台虚拟机`);
       load();
-    } catch (e: any) {
-      message.error(e.response?.data?.error || '同步失败');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, '同步失败'));
     }
     setSyncing(null);
   };
@@ -103,7 +103,7 @@ export default function Projects() {
     )},
     {
       title: '操作', 
-      render: (_: any, record: any) => (
+      render: (_: unknown, record: Project) => (
         <Space size="small">
           <Button 
             size="small" 

@@ -1,0 +1,156 @@
+{
+  "base": "http://127.0.0.1/api",
+  "probed_at": "2026-03-09",
+  "source": "ssh-mcp-server:ww",
+  "contracts": [
+    {
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200,
+      "shape": { "type": "object", "keys": ["email", "exp", "iat", "id", "role", "username"] }
+    },
+    {
+      "method": "GET",
+      "path": "/projects",
+      "status": 200,
+      "shape": { "type": "array", "item_keys": ["created_at", "id", "name", "project_code", "status", "user_id", "vcenter_folder_id", "vcenter_folder_path"] }
+    },
+    {
+      "method": "GET",
+      "path": "/vms",
+      "status": 200,
+      "shape": { "type": "array", "item_keys": ["bound_at", "cpu_cores", "create_time", "created_at", "end_time", "gpu_count", "gpu_type", "id", "memory_gb", "name", "owner", "project_code", "project_id", "project_name", "status", "storage_gb", "unbound_at", "vcenter_vm_id"] }
+    },
+    {
+      "method": "GET",
+      "path": "/daily-billing/daily",
+      "status": 200,
+      "shape": { "type": "array", "item_keys": ["bill_date", "cpu_cores", "created_at", "daily_cost", "gpu_count", "gpu_type", "id", "memory_gb", "project_code", "project_id", "project_name", "storage_gb", "unit_price", "username", "vcenter_vm_id", "vm_id", "vm_name"] }
+    },
+    {
+      "method": "GET",
+      "path": "/daily-billing/stats",
+      "status": 200,
+      "shape": { "type": "array", "item_keys": ["bill_days", "period", "total_cost", "vm_count"] }
+    },
+    {
+      "method": "GET",
+      "path": "/daily-billing/pricing",
+      "status": 200,
+      "shape": { "type": "array", "item_keys": ["effective_from", "id", "resource_type", "unit_price"] }
+    },
+    {
+      "method": "GET",
+      "path": "/resource-requests",
+      "status": 200,
+      "shape": {
+        "type": "object",
+        "keys": ["data", "pagination"],
+        "array_items": { "data": ["approved_at", "created_at", "deployed_at", "environment", "id", "purpose", "request_number", "status", "user_id", "user_name", "vm_count"] },
+        "nested": { "pagination": ["limit", "page", "total", "total_pages"] }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/admin/resource-requests/stats",
+      "status": 200,
+      "shape": {
+        "type": "object",
+        "keys": ["daily_requests", "environment_counts", "gpu_usage", "status_counts"],
+        "nested": {
+          "status_counts": ["approved", "deployed", "deploying", "failed", "pending", "rejected"],
+          "environment_counts": ["development", "production", "testing"]
+        },
+        "array_items": { "daily_requests": ["count", "date"] }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/gpu/inventory",
+      "status": 200,
+      "shape": {
+        "type": "object",
+        "keys": ["data", "last_synced_at"],
+        "array_items": { "data": ["allocated_at", "allocated_to_vm", "device_id", "device_name", "gpu_model", "host_id", "host_name", "id", "last_synced_at", "status", "sync_error"] }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/gpu/availability",
+      "status": 200,
+      "shape": { "type": "object", "keys": ["data"], "array_items": { "data": ["available", "gpu_model", "in_use", "maintenance", "reserved", "total"] } }
+    },
+    {
+      "method": "GET",
+      "path": "/admin/users",
+      "status": 200,
+      "shape": { "type": "array", "item_keys": ["created_at", "email", "email_verified", "id", "role", "status", "username"] }
+    },
+    {
+      "method": "GET",
+      "path": "/admin/projects",
+      "status": 200,
+      "shape": { "type": "array", "item_keys": ["created_at", "id", "name", "project_code", "status", "user_email", "user_id", "username", "vcenter_folder_id", "vcenter_folder_path", "vm_count"] }
+    },
+    {
+      "method": "GET",
+      "path": "/admin/vms",
+      "status": 200,
+      "shape": { "type": "array", "item_keys": ["bound_at", "cpu_cores", "create_time", "created_at", "end_time", "gpu_count", "gpu_type", "id", "memory_gb", "name", "owner", "project_code", "project_id", "project_name", "status", "storage_gb", "unbound_at", "username", "vcenter_vm_id"] }
+    },
+    {
+      "method": "GET",
+      "path": "/admin/pricing",
+      "status": 200,
+      "shape": { "type": "array", "item_keys": ["effective_from", "id", "resource_type", "unit_price"] }
+    },
+    {
+      "method": "GET",
+      "path": "/admin/network-pools",
+      "status": 200,
+      "shape": { "type": "array" }
+    },
+    {
+      "method": "GET",
+      "path": "/resource-requests?status=bad",
+      "status": 400,
+      "error_body": { "error": "Invalid status filter" }
+    },
+    {
+      "method": "GET",
+      "path": "/gpu/inventory?status=bad",
+      "status": 400,
+      "error_body": { "error": "Invalid status filter" }
+    },
+    {
+      "method": "GET",
+      "path": "/daily-billing/stats?dimension=bad",
+      "status": 400,
+      "error_body": { "error": "dimension must be one of: day, month" }
+    },
+    {
+      "method": "POST",
+      "path": "/resource-requests",
+      "status": 400,
+      "error_body": { "error": "Invalid request payload" }
+    },
+    {
+      "method": "PATCH",
+      "path": "/admin/resource-requests/:id/reject",
+      "status": 400,
+      "error_body": { "error": "Invalid request payload" }
+    },
+    {
+      "method": "POST",
+      "path": "/admin/network-pools",
+      "status": 400,
+      "error_body": { "error": "Invalid request payload" }
+    },
+    {
+      "method": "PATCH",
+      "path": "/gpu/:id/status",
+      "status": 400,
+      "error_body": { "error": "Invalid status" }
+    }
+  ]
+}

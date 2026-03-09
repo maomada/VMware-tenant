@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, message, Space, Tabs, Input, Tag, Select, Modal, Form, Row, Col, Card, Statistic } from 'antd';
+import { Table, Button, message, Space, Tabs, Input, Tag, Select, Row, Col, Card, Statistic } from 'antd';
 import { Link } from 'react-router-dom';
-import { admin } from '../../api';
+import {
+  admin,
+  getApiErrorMessage,
+  type EnvironmentType,
+  type RequestStatus,
+  type ResourceRequestStats,
+  type ResourceRequestSummary
+} from '../../api';
+import { formatDateTime, getEnvironmentLabel, getRequestStatusLabel } from '../../utils/display';
 
 const statusColors: Record<string, string> = {
   pending: 'orange',
@@ -13,23 +21,14 @@ const statusColors: Record<string, string> = {
 };
 
 export default function AdminResourceRequests() {
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<ResourceRequestSummary[]>([]);
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<string | undefined>();
-  const [environment, setEnvironment] = useState<string | undefined>();
+  const [status, setStatus] = useState<RequestStatus | undefined>();
+  const [environment, setEnvironment] = useState<EnvironmentType | undefined>();
   const [search, setSearch] = useState('');
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
-  const [approveModal, setApproveModal] = useState<{ id: number } | null>(null);
-  const [rejectModal, setRejectModal] = useState<{ id: number } | null>(null);
-  const [stats, setStats] = useState<any | null>(null);
+  const [stats, setStats] = useState<ResourceRequestStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
-  const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
-  const [bulkApproveModal, setBulkApproveModal] = useState(false);
-  const [bulkRejectModal, setBulkRejectModal] = useState(false);
-  const [approveForm] = Form.useForm();
-  const [rejectForm] = Form.useForm();
-  const [bulkApproveForm] = Form.useForm();
-  const [bulkRejectForm] = Form.useForm();
 
   const load = async (
     page = pagination.current,
@@ -53,8 +52,8 @@ export default function AdminResourceRequests() {
         pageSize,
         total: res.data.pagination?.total || 0
       });
-    } catch (e: any) {
-      message.error(e.response?.data?.error || 'Failed to load requests');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, 'Failed to load requests'));
     } finally {
       setLoading(false);
     }
@@ -65,8 +64,8 @@ export default function AdminResourceRequests() {
     try {
       const res = await admin.resourceRequestStats();
       setStats(res.data || null);
-    } catch (e: any) {
-      message.error(e.response?.data?.error || 'Failed to load stats');
+    } catch (error: unknown) {
+      message.error(getApiErrorMessage(error, 'Failed to load stats'));
     } finally {
       setStatsLoading(false);
     }
@@ -80,109 +79,23 @@ export default function AdminResourceRequests() {
     loadStats();
   }, []);
 
-  const submitApprove = async () => {
-    if (!approveModal) return;
-    try {
-      const values = await approveForm.validateFields();
-      await admin.approveResourceRequest(approveModal.id, values);
-      message.success('Request approved');
-      setApproveModal(null);
-      approveForm.resetFields();
-      load(pagination.current, pagination.pageSize);
-      loadStats();
-    } catch (e: any) {
-      if (e?.errorFields) return;
-      message.error(e.response?.data?.error || 'Approve failed');
-    }
-  };
-
-  const submitReject = async () => {
-    if (!rejectModal) return;
-    try {
-      const values = await rejectForm.validateFields();
-      await admin.rejectResourceRequest(rejectModal.id, values);
-      message.success('Request rejected');
-      setRejectModal(null);
-      rejectForm.resetFields();
-      load(pagination.current, pagination.pageSize);
-      loadStats();
-    } catch (e: any) {
-      if (e?.errorFields) return;
-      message.error(e.response?.data?.error || 'Reject failed');
-    }
-  };
-
-  const submitBulkApprove = async () => {
-    if (!selectedRowKeys.length) return;
-    try {
-      const values = await bulkApproveForm.validateFields();
-      const results = await Promise.allSettled(
-        selectedRowKeys.map((id) => admin.approveResourceRequest(id, values))
-      );
-      const successCount = results.filter((r) => r.status === 'fulfilled').length;
-      const failCount = results.length - successCount;
-      if (successCount) message.success(`Approved ${successCount} requests`);
-      if (failCount) message.error(`${failCount} approvals failed`);
-      setBulkApproveModal(false);
-      bulkApproveForm.resetFields();
-      setSelectedRowKeys([]);
-      load(pagination.current, pagination.pageSize);
-      loadStats();
-    } catch (e: any) {
-      if (e?.errorFields) return;
-      message.error(e.response?.data?.error || 'Bulk approve failed');
-    }
-  };
-
-  const submitBulkReject = async () => {
-    if (!selectedRowKeys.length) return;
-    try {
-      const values = await bulkRejectForm.validateFields();
-      const results = await Promise.allSettled(
-        selectedRowKeys.map((id) => admin.rejectResourceRequest(id, values))
-      );
-      const successCount = results.filter((r) => r.status === 'fulfilled').length;
-      const failCount = results.length - successCount;
-      if (successCount) message.success(`Rejected ${successCount} requests`);
-      if (failCount) message.error(`${failCount} rejections failed`);
-      setBulkRejectModal(false);
-      bulkRejectForm.resetFields();
-      setSelectedRowKeys([]);
-      load(pagination.current, pagination.pageSize);
-      loadStats();
-    } catch (e: any) {
-      if (e?.errorFields) return;
-      message.error(e.response?.data?.error || 'Bulk reject failed');
-    }
-  };
-
   const columns = [
     { title: 'Request #', dataIndex: 'request_number' },
     { title: 'Requester', dataIndex: 'user_name' },
     { title: 'Purpose', dataIndex: 'purpose' },
-    { title: 'Environment', dataIndex: 'environment' },
+    { title: 'Environment', dataIndex: 'environment', render: (v: EnvironmentType) => getEnvironmentLabel(v) },
     { title: 'VM Count', dataIndex: 'vm_count' },
     {
       title: 'Status',
       dataIndex: 'status',
-      render: (v: string) => <Tag color={statusColors[v] || 'default'}>{v}</Tag>
+      render: (v: RequestStatus) => <Tag color={statusColors[v] || 'default'}>{getRequestStatusLabel(v)}</Tag>
     },
-    { title: 'Created At', dataIndex: 'created_at', render: (v: string) => new Date(v).toLocaleString() },
+    { title: 'Created At', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
     {
       title: 'Actions',
-      render: (_: any, record: any) => (
+      render: (_: unknown, record: ResourceRequestSummary) => (
         <Space>
           <Link to={`/admin/resource-requests/${record.id}`}>View</Link>
-          {record.status === 'pending' && (
-            <>
-              <Button size="small" type="primary" onClick={() => setApproveModal({ id: record.id })}>
-                Approve
-              </Button>
-              <Button size="small" danger onClick={() => setRejectModal({ id: record.id })}>
-                Reject
-              </Button>
-            </>
-          )}
         </Space>
       )
     }
@@ -198,25 +111,28 @@ export default function AdminResourceRequests() {
     { key: 'failed', label: 'Failed' }
   ];
 
-  const statusCounts = stats?.status_counts || {};
-  const totalRequests = Object.values(statusCounts).reduce((sum: number, value: any) => sum + (Number(value) || 0), 0);
+  const statusCounts = stats?.status_counts || {
+    pending: 0,
+    approved: 0,
+    deploying: 0,
+    deployed: 0,
+    rejected: 0,
+    failed: 0
+  };
+  const totalRequests = Object.values(statusCounts).reduce<number>((sum, value) => sum + (Number(value) || 0), 0);
   const pendingCount = Number(statusCounts.pending || 0);
   const deployedCount = Number(statusCounts.deployed || 0);
   const failedCount = Number(statusCounts.failed || 0);
   const successRate = deployedCount + failedCount > 0
     ? Math.round((deployedCount / (deployedCount + failedCount)) * 100)
     : 0;
-  const environmentCounts = stats?.environment_counts || {};
+  const environmentCounts = stats?.environment_counts || {
+    development: 0,
+    testing: 0,
+    production: 0
+  };
   const gpuUsage = stats?.gpu_usage || [];
   const dailyRequests = stats?.daily_requests || [];
-
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: (keys: any[]) => setSelectedRowKeys(keys as number[]),
-    getCheckboxProps: (record: any) => ({
-      disabled: record.status !== 'pending'
-    })
-  };
 
   const gpuColumns = [
     { title: 'GPU Model', dataIndex: 'gpu_model' },
@@ -312,32 +228,20 @@ export default function AdminResourceRequests() {
           allowClear
           style={{ width: 200 }}
           value={environment}
-          onChange={(value) => setEnvironment(value)}
+          onChange={(value) => setEnvironment(value as EnvironmentType | undefined)}
           options={[
             { label: 'Development', value: 'development' },
             { label: 'Testing', value: 'testing' },
             { label: 'Production', value: 'production' }
           ]}
         />
-        <Button
-          type="primary"
-          disabled={!selectedRowKeys.length}
-          onClick={() => setBulkApproveModal(true)}
-        >
-          Bulk Approve
+        <Button onClick={() => { setStatus(undefined); setEnvironment(undefined); setSearch(''); load(1, pagination.pageSize, '', undefined, undefined); }}>
+          重置筛选
         </Button>
-        <Button
-          danger
-          disabled={!selectedRowKeys.length}
-          onClick={() => setBulkRejectModal(true)}
-        >
-          Bulk Reject
-        </Button>
-        <span>Selected: {selectedRowKeys.length}</span>
       </Space>
       <Tabs
         activeKey={status || 'all'}
-        onChange={(key) => setStatus(key === 'all' ? undefined : key)}
+        onChange={(key) => setStatus(key === 'all' ? undefined : (key as RequestStatus))}
         items={tabItems}
       />
       <Table
@@ -345,7 +249,6 @@ export default function AdminResourceRequests() {
         dataSource={data}
         rowKey="id"
         loading={loading}
-        rowSelection={rowSelection}
         pagination={{
           current: pagination.current,
           pageSize: pagination.pageSize,
@@ -355,71 +258,7 @@ export default function AdminResourceRequests() {
         onChange={(pager) => load(pager.current || 1, pager.pageSize || pagination.pageSize, search, status, environment)}
       />
 
-      <Modal
-        title="Approve Request"
-        open={!!approveModal}
-        onCancel={() => { setApproveModal(null); approveForm.resetFields(); }}
-        onOk={submitApprove}
-      >
-        <Form form={approveForm} layout="vertical">
-          <Form.Item name="admin_notes" label="Admin Notes">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-        </Form>
-      </Modal>
 
-      <Modal
-        title="Reject Request"
-        open={!!rejectModal}
-        onCancel={() => { setRejectModal(null); rejectForm.resetFields(); }}
-        onOk={submitReject}
-      >
-        <Form form={rejectForm} layout="vertical">
-          <Form.Item
-            name="rejection_reason"
-            label="Rejection Reason"
-            rules={[{ required: true, message: 'Rejection reason is required' }]}
-          >
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Form.Item name="admin_notes" label="Admin Notes">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title="Bulk Approve Requests"
-        open={bulkApproveModal}
-        onCancel={() => { setBulkApproveModal(false); bulkApproveForm.resetFields(); }}
-        onOk={submitBulkApprove}
-      >
-        <Form form={bulkApproveForm} layout="vertical">
-          <Form.Item name="admin_notes" label="Admin Notes">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title="Bulk Reject Requests"
-        open={bulkRejectModal}
-        onCancel={() => { setBulkRejectModal(false); bulkRejectForm.resetFields(); }}
-        onOk={submitBulkReject}
-      >
-        <Form form={bulkRejectForm} layout="vertical">
-          <Form.Item
-            name="rejection_reason"
-            label="Rejection Reason"
-            rules={[{ required: true, message: 'Rejection reason is required' }]}
-          >
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Form.Item name="admin_notes" label="Admin Notes">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-        </Form>
-      </Modal>
     </div>
   );
 }

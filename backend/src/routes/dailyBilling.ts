@@ -215,11 +215,18 @@ router.put('/pricing', auth, async (req: AuthRequest, res: Response) => {
   }
 
   const { resourceType, unitPrice } = req.body;
+  if (typeof resourceType !== 'string' || !resourceType.trim()) {
+    return res.status(400).json({ error: 'resourceType is required' });
+  }
+  if (typeof unitPrice !== 'number' || Number.isNaN(unitPrice) || unitPrice < 0) {
+    return res.status(400).json({ error: 'unitPrice must be a non-negative number' });
+  }
+
   await pool.query(`
     INSERT INTO pricing_config (resource_type, unit_price)
     VALUES ($1, $2)
     ON CONFLICT (resource_type) DO UPDATE SET unit_price = $2, effective_from = CURRENT_TIMESTAMP
-  `, [resourceType, unitPrice]);
+  `, [resourceType.trim(), unitPrice]);
 
   res.json({ message: '价格已更新' });
 });
