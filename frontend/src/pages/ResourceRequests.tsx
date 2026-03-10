@@ -177,6 +177,9 @@ export default function ResourceRequests() {
         dataSource={data}
         rowKey="id"
         loading={loading}
+        onRow={(_record, index) => ({
+          style: { '--row-index': index } as React.CSSProperties
+        })}
         pagination={{
           current: pagination.current,
           pageSize: pagination.pageSize,

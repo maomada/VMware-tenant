@@ -1,7 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate, Link, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Link, Outlet, useLocation } from 'react-router-dom';
 import { Layout, Menu, Button, Spin } from 'antd';
 import { UserOutlined, DesktopOutlined, DollarOutlined, FolderOutlined, LogoutOutlined, SettingOutlined, FormOutlined, HddOutlined, GlobalOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { AuthProvider, useAuth } from './AuthContext';
+import { useEffect, useState } from 'react';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import VerifyEmail from './pages/VerifyEmail';
@@ -22,6 +23,36 @@ import AdminNetworkPools from './pages/admin/NetworkPools';
 import DeploymentLogs from './pages/admin/DeploymentLogs';
 
 const { Header, Sider, Content } = Layout;
+
+function PageWrapper({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const [key, setKey] = useState(location.pathname);
+  const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
+  const [prevPath, setPrevPath] = useState('');
+
+  useEffect(() => {
+    const pathOrder = ['/resource-requests/create', '/resource-requests', '/projects', '/vms', '/billing'];
+    const currentIdx = pathOrder.indexOf(location.pathname);
+    const prevIdx = pathOrder.indexOf(prevPath);
+
+    if (currentIdx > prevIdx && prevIdx !== -1) {
+      setDirection('forward');
+    } else if (currentIdx < prevIdx && currentIdx !== -1) {
+      setDirection('backward');
+    }
+    setKey(location.pathname);
+    setPrevPath(location.pathname);
+  }, [location.pathname]);
+
+  return (
+    <div 
+      key={key}
+      className={`page-content ${direction === 'forward' ? 'slide-left' : direction === 'backward' ? 'slide-right' : 'fade-in-up'}`}
+    >
+      {children}
+    </div>
+  );
+}
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -115,9 +146,11 @@ function UserLayout() {
             </Button>
           </div>
         </Header>
-        <Content style={{ margin: 24, padding: 24, background: '#0a0e17', minHeight: 280 }}>
-          <div className="bg-grid" style={{ minHeight: '100%', padding: '0 0 24px 0' }}>
-            <Outlet />
+        <Content style={{ margin: 24, padding: 24, background: '#0a0e17', minHeight: 280, overflow: 'hidden' }}>
+          <div className="bg-grid" style={{ minHeight: '100%', padding: '0 0 24px 0', position: 'relative' }}>
+            <PageWrapper>
+              <Outlet />
+            </PageWrapper>
           </div>
         </Content>
       </Layout>
@@ -211,9 +244,11 @@ function AdminLayout() {
             </Button>
           </div>
         </Header>
-        <Content style={{ margin: 24, padding: 24, background: '#0a0e17', minHeight: 280 }}>
-          <div className="bg-grid" style={{ minHeight: '100%', padding: '0 0 24px 0' }}>
-            <Outlet />
+        <Content style={{ margin: 24, padding: 24, background: '#0a0e17', minHeight: 280, overflow: 'hidden' }}>
+          <div className="bg-grid" style={{ minHeight: '100%', padding: '0 0 24px 0', position: 'relative' }}>
+            <PageWrapper>
+              <Outlet />
+            </PageWrapper>
           </div>
         </Content>
       </Layout>

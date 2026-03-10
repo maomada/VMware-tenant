@@ -161,6 +161,9 @@ export default function Projects() {
         dataSource={data} 
         rowKey="id" 
         loading={loading}
+        onRow={(_record, index) => ({
+          style: { '--row-index': index } as React.CSSProperties
+        })}
         style={{ 
           background: 'var(--bg-card)',
           borderRadius: 12,

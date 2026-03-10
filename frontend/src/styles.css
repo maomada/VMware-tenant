@@ -73,6 +73,11 @@ body {
 .ant-menu-dark .ant-menu-item:hover {
   color: var(--accent-primary) !important;
   background: var(--bg-tertiary) !important;
+  transform: translateX(4px);
+}
+
+.ant-menu-dark .ant-menu-item:active {
+  background: var(--bg-tertiary) !important;
 }
 
 .ant-menu-dark .ant-menu-item-selected {
@@ -99,6 +104,13 @@ body {
   border: 1px solid var(--border-color) !important;
   border-radius: 12px !important;
   box-shadow: var(--shadow-card) !important;
+  transition: all 0.3s ease !important;
+}
+
+.ant-card:hover {
+  border-color: var(--border-glow) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 212, 255, 0.1) !important;
 }
 
 .ant-card-head {
@@ -180,6 +192,21 @@ body {
 .ant-btn-primary:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(0, 212, 255, 0.4) !important;
+}
+
+.ant-btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(0, 212, 255, 0.3) !important;
+}
+
+.ant-btn-default:hover {
+  border-color: var(--accent-primary) !important;
+  color: var(--accent-primary) !important;
+}
+
+.ant-btn-default:active {
+  transform: scale(0.98);
+  background: var(--bg-tertiary) !important;
 }
 
 .ant-btn-default {
@@ -377,7 +404,12 @@ body {
   background: var(--text-muted);
 }
 
-/* Animation keyframes */
+/* Page transition animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @keyframes fadeInUp {
   from {
     opacity: 0;
@@ -386,6 +418,69 @@ body {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(0, 212, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(0, 212, 255, 0.6);
   }
 }
 
@@ -405,6 +500,22 @@ body {
   50% {
     box-shadow: 0 0 20px rgba(0, 212, 255, 0.6);
   }
+}
+
+.page-content {
+  animation: fadeInUp 0.4s ease forwards;
+}
+
+.page-content.slide-left {
+  animation: slideInLeft 0.4s ease forwards;
+}
+
+.page-content.slide-right {
+  animation: slideInRight 0.4s ease forwards;
+}
+
+.page-content.scale-in {
+  animation: scaleIn 0.3s ease forwards;
 }
 
 .fade-in-up {
@@ -484,15 +595,57 @@ body {
   display: none;
 }
 
+/* Table enhancements with animations */
+.ant-table-tbody > tr {
+  animation: fadeInUp 0.3s ease forwards;
+  animation-delay: calc(var(--row-index, 0) * 0.05s);
+  opacity: 0;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--bg-card-hover) !important;
+  transform: translateX(4px);
+  transition: all 0.2s ease;
+}
+
+.ant-table-tbody > tr.ant-table-row:hover > td {
+  background: var(--bg-card-hover) !important;
+  transform: translateX(4px);
+}
+
+.ant-table-tbody > tr:active > td {
+  background: var(--bg-tertiary) !important;
+}
+
 /* Table row actions */
 .action-btn {
   opacity: 0.7;
   transition: var(--transition-fast);
+  position: relative;
+  overflow: hidden;
 }
 
 .action-btn:hover {
   opacity: 1;
   transform: scale(1.1);
+}
+
+.action-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.3s, height 0.3s;
+}
+
+.action-btn:active::after {
+  width: 100px;
+  height: 100px;
 }
 
 /* Status indicators */
@@ -518,6 +671,36 @@ body {
 .status-error {
   background: var(--accent-danger);
   box-shadow: 0 0 8px var(--accent-danger);
+}
+
+/* Skeleton loading animation */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-card-hover) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+.skeleton-text {
+  height: 16px;
+  margin-bottom: 8px;
+}
+
+.skeleton-title {
+  height: 24px;
+  width: 60%;
+  margin-bottom: 16px;
+}
+
+.skeleton-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.skeleton-button {
+  height: 36px;
+  width: 100px;
 }
 
 /* Login/Register page specific */
@@ -556,7 +739,18 @@ body {
   box-shadow: 
     var(--shadow-card),
     0 0 60px rgba(0, 212, 255, 0.1);
-  animation: fadeInUp 0.5s ease forwards;
+  animation: fadeInUp 0.5s ease forwards, glow-pulse 3s ease-in-out infinite;
+  animation-delay: 0s, 1s;
+}
+
+.auth-card:hover {
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow: 
+    var(--shadow-card),
+    0 0 80px rgba(0, 212, 255, 0.2),
+    inset 0 0 30px rgba(0, 212, 255, 0.02);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
 }
 
 .auth-logo {
@@ -574,6 +768,11 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   margin: 0;
+  animation: float 3s ease-in-out infinite;
+}
+
+.auth-logo .anticon {
+  animation: glow-pulse 2s ease-in-out infinite;
 }
 
 .auth-logo p {
@@ -613,6 +812,73 @@ body {
 .result-success {
   text-align: center;
   padding: 40px 0;
+  animation: scaleIn 0.5s ease forwards;
+}
+
+.result-success .ant-result-icon > .anticon {
+  animation: float 2s ease-in-out infinite, glow-pulse 2s ease-in-out infinite;
+}
+
+/* Spin loader enhancement */
+.ant-spin-dot-item {
+  background: var(--accent-primary) !important;
+}
+
+.ant-spin-container::after {
+  background: var(--bg-primary) !important;
+}
+
+/* Tag hover effects */
+.ant-tag {
+  transition: all 0.2s ease;
+  cursor: default;
+}
+
+.ant-tag:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Select dropdown animation */
+.ant-select-dropdown {
+  animation: fadeInUp 0.2s ease forwards;
+  transform-origin: center top;
+}
+
+/* Modal animation */
+.ant-modal-enter {
+  animation: scaleIn 0.3s ease forwards;
+}
+
+.ant-modal-exit {
+  animation: fadeIn 0.2s ease forwards;
+}
+
+/* Form input focus animation */
+.ant-input-affix-wrapper {
+  transition: all 0.3s ease !important;
+}
+
+.ant-input-affix-wrapper:hover {
+  border-color: rgba(0, 212, 255, 0.4) !important;
+}
+
+/* Link hover effects */
+a {
+  transition: all 0.2s ease;
+}
+
+a:hover {
+  color: var(--accent-primary) !important;
+}
+
+/* Tabs animation */
+.ant-tabs-tab {
+  transition: all 0.3s ease;
+}
+
+.ant-tabs-tab:hover {
+  transform: translateY(-2px);
 }
 
 .result-success .ant-result-icon > .anticon {

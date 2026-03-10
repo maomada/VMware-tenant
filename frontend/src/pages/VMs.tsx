@@ -210,6 +210,9 @@ export default function VMs() {
         rowKey="id" 
         loading={loading}
         scroll={{ x: 1200 }}
+        onRow={(_record, index) => ({
+          style: { '--row-index': index } as React.CSSProperties
+        })}
       />
     </div>
   );
